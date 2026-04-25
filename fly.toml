@@ -1,0 +1,24 @@
+# Fly.io 배포 설정. `fly launch --copy-config --no-deploy` 후 `fly deploy`.
+# 한국 사용자: 도쿄(nrt) 또는 싱가폴(sin) 권장.
+app = "ax-lunch-coffee"
+primary_region = "nrt"
+
+[build]
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+  # WebSocket 지속 연결 유지
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 150
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
