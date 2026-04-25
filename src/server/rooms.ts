@@ -67,7 +67,27 @@ export function createRoom(): { roomId: string; hostToken: string } {
   };
   rooms.set(id, room);
   scheduleCleanup(room);
+  if (process.env.NODE_ENV !== 'production') seedDevBots(room);
   return { roomId: id, hostToken };
+}
+
+// Dev-only: seed 5 fake players so a single browser tab can test multiplayer flows
+// without juggling incognito windows. Bots have no socket — they sit in the room as
+// `connected: true` and get included in the simulation like any real player.
+const DEV_BOT_NAMES = ['봇1', '봇2', '봇3', '봇4', '봇5'];
+function seedDevBots(room: RoomState) {
+  for (const name of DEV_BOT_NAMES) {
+    const token = newPlayerToken();
+    const color = MARBLE_COLORS[room.players.size % MARBLE_COLORS.length];
+    room.players.set(token, {
+      socketId: null,
+      playerToken: token,
+      nickname: name,
+      joinedAt: Date.now(),
+      connected: true,
+      color,
+    });
+  }
 }
 
 export function getRoom(roomId: string): RoomState | undefined {

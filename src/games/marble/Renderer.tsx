@@ -5,8 +5,9 @@ import type { SimulationResult } from './sim';
 
 const MARBLE_RADIUS = 0.25; // box2d meters, matches lazygyu
 const VIEW_HEIGHT_METERS = 22; // baseline meters of vertical track shown
-const ZOOM_THRESHOLD = 8; // meters from zoomY where the camera starts zooming in
-const ZOOM_MAX = 2.6; // max zoom multiplier near goal
+const ZOOM_THRESHOLD = 5; // meters from zoomY where the camera starts zooming in (lazygyu)
+const ZOOM_MAX = 4; // max zoom multiplier near goal (lazygyu uses 4×)
+const CAMERA_EASE_RATE = 6; // exponential ease constant — ~150ms time to converge 90%
 
 export type MarbleRendererProps = {
   startAt: number;
@@ -58,10 +59,12 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
     const canvas = canvasRef.current;
     const wrapper = wrapperRef.current;
     if (!canvas || !wrapper) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Cap DPR at 1.5: the marble pegs are too small for the extra pixels to be visible,
+    // and full DPR=2 doubles the fill cost on already-busy phones.
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
     function resize() {
       if (!canvas || !wrapper) return;
@@ -80,21 +83,58 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
     const totalFrames = replay.frames.length;
     const myIdx = myPlayerToken ? replay.playerOrder.indexOf(myPlayerToken) : -1;
 
+    // Pre-sort non-polyline entities by Y so we can binary-search the visible band each frame.
+    // Polylines span huge Y ranges (e.g. -300..111), so they can't be sorted — keep them separate
+    // and iterate all 22.
+    const polylineEntities: typeof replay.entities = [];
+    const sortedEntities: typeof replay.entities = [];
+    for (const e of replay.entities) {
+      if (e.shape.type === 'polyline') polylineEntities.push(e);
+      else sortedEntities.push(e);
+    }
+    sortedEntities.sort((a, b) => a.y - b.y);
+    const sortedYs = sortedEntities.map((e) => e.y);
+
+    // Pre-measure nickname widths once instead of measureText-per-marble-per-frame.
+    ctx.font = `bold ${14 * dpr}px sans-serif`;
+    const labelWidths = new Map<string, number>();
+    for (const p of players) labelWidths.set(p.playerToken, ctx.measureText(p.nickname).width);
+
     // Track which finish frames have been "consumed" for fanfare so we spawn each only once.
     let lastProcessedFrame = -1;
 
-    // Two panes: main (my marble) and inset (current leader). Both share the same draw routine.
+    // Loser = the very last entry in finishOrder. That's the player who pays for coffee,
+    // and the climactic moment of the race.
+    const loserToken = replay.finishOrder[replay.finishOrder.length - 1];
+    const loserIdx = loserToken ? replay.playerOrder.indexOf(loserToken) : -1;
+
+    // Two panes: main (my marble) and inset (꼴등 후보). Both share the same draw routine.
     const mainPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '', particles: [], bursts: [], pulse: 0, shake: 0 };
-    const insetPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '1등 시점', particles: [], bursts: [], pulse: 0, shake: 0 };
+    const insetPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '꼴등 시점', particles: [], bursts: [], pulse: 0, shake: 0 };
+
+    // Cumulative playback time at the START of each frame (cumMs[i] = sum of frameDurations[0..i-1]).
+    // Used to map wall-clock elapsed → frameF via binary search.
+    const frameDurations = replay.frameDurations;
+    const cumMs = new Float64Array(frameDurations.length + 1);
+    for (let i = 0; i < frameDurations.length; i++) cumMs[i + 1] = cumMs[i] + frameDurations[i];
+
+    // Stateful smooth camera (lazygyu-style): position and zoom ease toward target each frame
+    // instead of snapping. Re-initialized to target on the very first draw.
+    let camY = 0, camZoom = 1;
+    let insetCamY = 0, insetCamZoom = 1;
+    let camInit = false;
 
     let raf = 0;
     let lastT = performance.now();
     const draw = (now: number) => {
-      const dtSec = Math.min(0.05, (now - lastT) / 1000); // clamp jank
+      // Clamp to [0, 0.05]: RAF's `now` can be slightly behind `lastT` on the first frame
+      // (different time origins), which would yield a negative dt and feed negative ages
+      // into burst/particle math (radii go negative → canvas throws).
+      const dtSec = Math.max(0, Math.min(0.05, (now - lastT) / 1000));
       lastT = now;
 
       const elapsed = Math.max(0, Date.now() - startAt);
-      const frameF = elapsedToFrameF(elapsed, fps, replay.slowRanges, replay.slowFactor, totalFrames);
+      const frameF = elapsedToFrameF(elapsed, cumMs, frameDurations, totalFrames);
       const idx = Math.min(totalFrames - 1, Math.max(0, Math.floor(frameF)));
       const tFrac = Math.min(1, Math.max(0, frameF - idx));
       const cur = replay.frames[idx];
@@ -107,42 +147,49 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
       const W = canvas.width;
       const H = canvas.height;
 
-      // Decide leader (max y across all marbles)
-      let leaderY = 0;
-      let leaderIdx = 0;
+      // Live 꼴등 후보: the slowest unfinished marble (lowest y). Once everyone finishes,
+      // fall back to the precomputed loserIdx so the camera stays parked on them.
+      let liveLoserY = Infinity;
+      let liveLoserIdx = -1;
       for (let i = 0; i < replay.playerOrder.length; i++) {
+        const ff = replay.finishFrames[i];
+        if (ff >= 0 && idx >= ff) continue; // already finished
         const yv = cur[i * 2 + 1];
-        if (yv > leaderY) {
-          leaderY = yv;
-          leaderIdx = i;
+        if (yv < liveLoserY) {
+          liveLoserY = yv;
+          liveLoserIdx = i;
         }
       }
+      if (liveLoserIdx < 0 && loserIdx >= 0) {
+        liveLoserIdx = loserIdx;
+        liveLoserY = cur[loserIdx * 2 + 1];
+      }
 
-      // My marble's current position (or leader if I haven't joined / am finished)
-      const iAmFinished = myIdx >= 0 && replay.finishFrames[myIdx] >= 0 && idx >= replay.finishFrames[myIdx] + 5;
-      const iAmLeader = myIdx === leaderIdx && !iAmFinished;
-      const myYNow = myIdx >= 0 ? cur[myIdx * 2 + 1] : leaderY;
+      // My marble's current position (or 꼴등 view if I'm finished early)
+      // Switch camera to the loser-candidate ~170ms after my marble crosses the goal.
+      const finishHoldFrames = Math.ceil(fps * 0.17);
+      const iAmFinished = myIdx >= 0 && replay.finishFrames[myIdx] >= 0 && idx >= replay.finishFrames[myIdx] + finishHoldFrames;
+      const iAmLoserCandidate = myIdx === liveLoserIdx && !iAmFinished;
+      const myYNow = myIdx >= 0 ? cur[myIdx * 2 + 1] : liveLoserY;
 
-      // Detect new finish events for fanfare
+      // Fanfare fires only when the LAST finisher (꼴등) crosses the line — that's the moment
+      // the loser is locked in.
       for (let f = lastProcessedFrame + 1; f <= idx; f++) {
         for (let i = 0; i < replay.finishFrames.length; i++) {
-          if (replay.finishFrames[i] === f) {
-            const wx = replay.frames[f][i * 2];
-            const wy = replay.frames[f][i * 2 + 1];
-            const color = playerByToken.get(replay.playerOrder[i])?.color ?? '#fbbf24';
-            // Determine rank: index of this token in finishOrder + 1
-            const rank = replay.finishOrder.indexOf(replay.playerOrder[i]) + 1;
-            const rankLabel = formatRankLabel(rank, replay.playerOrder.length);
-            spawnFinishBurst(mainPane.particles, wx, wy, color, rank);
-            spawnFinishBurst(insetPane.particles, wx, wy, color, rank);
-            mainPane.bursts.push({ x: wx, y: wy, age: 0, color, rankLabel });
-            insetPane.bursts.push({ x: wx, y: wy, age: 0, color, rankLabel });
-            const pulseStrength = rank === 1 ? 1.5 : 1;
-            mainPane.pulse = Math.max(mainPane.pulse, pulseStrength);
-            insetPane.pulse = Math.max(insetPane.pulse, pulseStrength);
-            mainPane.shake = Math.max(mainPane.shake, rank === 1 ? 1 : 0.5);
-            insetPane.shake = Math.max(insetPane.shake, rank === 1 ? 1 : 0.5);
-          }
+          if (replay.finishFrames[i] !== f) continue;
+          if (i !== loserIdx) continue;
+          const wx = replay.frames[f][i * 2];
+          const wy = replay.frames[f][i * 2 + 1];
+          const color = playerByToken.get(replay.playerOrder[i])?.color ?? '#fbbf24';
+          const rankLabel = formatLoserLabel();
+          spawnFinishBurst(mainPane.particles, wx, wy, color, replay.playerOrder.length);
+          spawnFinishBurst(insetPane.particles, wx, wy, color, replay.playerOrder.length);
+          mainPane.bursts.push({ x: wx, y: wy, age: 0, color, rankLabel });
+          insetPane.bursts.push({ x: wx, y: wy, age: 0, color, rankLabel });
+          mainPane.pulse = Math.max(mainPane.pulse, 1.5);
+          insetPane.pulse = Math.max(insetPane.pulse, 1.5);
+          mainPane.shake = Math.max(mainPane.shake, 1);
+          insetPane.shake = Math.max(insetPane.shake, 1);
         }
       }
       lastProcessedFrame = idx;
@@ -160,13 +207,24 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
       insetPane.pw = insetW;
       insetPane.ph = insetH;
 
-      // Camera Ys
-      const mainCamCenterY = iAmFinished || iAmLeader ? leaderY : myYNow;
-      const insetCamCenterY = leaderY;
-
-      // Zoom multiplier: ramps up as the relevant Y gets close to zoomY
-      const mainZoom = computeZoom(mainCamCenterY, replay.zoomY);
-      const insetZoom = computeZoom(insetCamCenterY, replay.zoomY);
+      // Camera target: when I'm done, follow the live 꼴등 candidate. Otherwise follow myself.
+      // The actual cam values ease toward these targets so the view glides instead of snapping
+      // (lazygyu's `cur + (target - cur) * factor` per frame, made framerate-independent here).
+      const targetMainY = iAmFinished ? liveLoserY : myYNow;
+      const targetInsetY = liveLoserY;
+      const targetMainZoom = computeZoom(targetMainY, replay.zoomY);
+      const targetInsetZoom = computeZoom(targetInsetY, replay.zoomY);
+      if (!camInit) {
+        camY = targetMainY; camZoom = targetMainZoom;
+        insetCamY = targetInsetY; insetCamZoom = targetInsetZoom;
+        camInit = true;
+      } else {
+        const k = 1 - Math.exp(-dtSec * CAMERA_EASE_RATE);
+        camY += (targetMainY - camY) * k;
+        camZoom += (targetMainZoom - camZoom) * k;
+        insetCamY += (targetInsetY - insetCamY) * k;
+        insetCamZoom += (targetInsetZoom - insetCamZoom) * k;
+      }
 
       // Background
       ctx.fillStyle = '#0b0b10';
@@ -174,29 +232,29 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
 
       // --- Draw main pane (with screen shake) ---
       mainPane.label = iAmFinished
-        ? '내 공 도착 ✓ · 1등 시점'
-        : iAmLeader
-          ? '내 공 (1등!)'
+        ? '내 공 도착 ✓ · 꼴등 시점'
+        : iAmLoserCandidate
+          ? '내 공 (위험! 꼴등 후보)'
           : '내 공 시점';
-      const mainShakeX = (Math.random() - 0.5) * mainPane.shake * 8 * dpr;
-      const mainShakeY = (Math.random() - 0.5) * mainPane.shake * 8 * dpr;
+      const mainShakeX = mainPane.shake > 0 ? (Math.random() - 0.5) * mainPane.shake * 8 * dpr : 0;
+      const mainShakeY = mainPane.shake > 0 ? (Math.random() - 0.5) * mainPane.shake * 8 * dpr : 0;
       ctx.save();
-      ctx.translate(mainShakeX, mainShakeY);
-      drawScene(ctx, mainPane, mainCamCenterY, mainZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken);
-      drawParticles(ctx, mainPane, dtSec, dpr, mainCamCenterY, mainZoom, replay.bounds);
+      if (mainShakeX || mainShakeY) ctx.translate(mainShakeX, mainShakeY);
+      drawScene(ctx, mainPane, camY, camZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken, polylineEntities, sortedEntities, sortedYs, labelWidths);
+      drawParticles(ctx, mainPane, dtSec, dpr, camY, camZoom, replay.bounds);
       ctx.restore();
       drawPaneFrame(ctx, mainPane, dpr, true);
 
       // --- Draw inset pane (only when meaningfully different from main) ---
-      const showInset = !iAmLeader && !iAmFinished && myIdx !== leaderIdx;
+      const showInset = !iAmFinished && myIdx !== liveLoserIdx;
       if (showInset) {
         // Clip to the inset rect
         ctx.save();
         roundedClip(ctx, insetPane.px, insetPane.py, insetPane.pw, insetPane.ph, 10 * dpr);
         ctx.fillStyle = '#0b0b10';
         ctx.fillRect(insetPane.px, insetPane.py, insetPane.pw, insetPane.ph);
-        drawScene(ctx, insetPane, insetCamCenterY, insetZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken);
-        drawParticles(ctx, insetPane, dtSec, dpr, insetCamCenterY, insetZoom, replay.bounds);
+        drawScene(ctx, insetPane, insetCamY, insetCamZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken, polylineEntities, sortedEntities, sortedYs, labelWidths);
+        drawParticles(ctx, insetPane, dtSec, dpr, insetCamY, insetCamZoom, replay.bounds);
         ctx.restore();
         drawPaneFrame(ctx, insetPane, dpr, false);
       } else {
@@ -243,47 +301,33 @@ function computeZoom(camY: number, zoomY: number): number {
 
 function elapsedToFrameF(
   elapsedMs: number,
-  fps: number,
-  slowRanges: [number, number][],
-  slowFactor: number,
+  cumMs: Float64Array,
+  frameDurations: number[],
   totalFrames: number,
 ): number {
-  const realFrameMs = 1000 / fps;
-  const slowFrameMs = realFrameMs / slowFactor;
-  let frameCursor = 0;
-  let timeCursor = 0;
-  for (const [s, e] of slowRanges) {
-    // Normal-speed segment up to range start
-    const normalFrames = s - frameCursor;
-    const normalMs = normalFrames * realFrameMs;
-    if (elapsedMs <= timeCursor + normalMs) {
-      return Math.min(totalFrames - 1, frameCursor + (elapsedMs - timeCursor) / realFrameMs);
-    }
-    timeCursor += normalMs;
-    frameCursor = s;
-    // Slow-mo segment for range
-    const slowFrameCount = e - s + 1;
-    const slowMs = slowFrameCount * slowFrameMs;
-    if (elapsedMs <= timeCursor + slowMs) {
-      return Math.min(totalFrames - 1, s + (elapsedMs - timeCursor) / slowFrameMs);
-    }
-    timeCursor += slowMs;
-    frameCursor = e + 1;
+  if (elapsedMs <= 0) return 0;
+  const total = cumMs[cumMs.length - 1];
+  if (elapsedMs >= total) return totalFrames - 1;
+  // Binary search: largest N with cumMs[N] <= elapsedMs (cumMs[N] is time at start of frame N).
+  let lo = 0, hi = cumMs.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (cumMs[mid] <= elapsedMs) lo = mid;
+    else hi = mid - 1;
   }
-  // Final normal-speed tail
-  return Math.min(totalFrames - 1, frameCursor + (elapsedMs - timeCursor) / realFrameMs);
+  const frameStart = cumMs[lo];
+  const frac = (elapsedMs - frameStart) / frameDurations[lo];
+  return lo + Math.min(0.9999, frac);
 }
 
-function formatRankLabel(rank: number, total: number): string {
-  if (rank === 1) return '🏆 1등!';
-  if (rank === total) return '🫣 꼴찌';
-  return `${rank}등`;
+function formatLoserLabel(): string {
+  return '☕ 꼴찌!';
 }
 
-function spawnFinishBurst(pool: Particle[], x: number, y: number, color: string, rank: number) {
+function spawnFinishBurst(pool: Particle[], x: number, y: number, color: string, _rank: number) {
   const palette = [color, '#fbbf24', '#ffffff', '#f472b6', '#a3e635'];
-  // Top finishers get bigger fanfare
-  const base = rank === 1 ? 80 : rank === 2 ? 55 : rank === 3 ? 45 : 32;
+  // The 꼴등 finish gets the biggest possible fanfare — that's the climactic reveal.
+  const base = 80;
   for (let i = 0; i < base; i++) {
     const a = Math.random() * Math.PI * 2;
     const speed = 4 + Math.random() * 9;
@@ -316,6 +360,10 @@ function drawScene(
   elapsedSec: number,
   playerByToken: Map<string, { color: string; nickname: string }>,
   myPlayerToken: string | null,
+  polylineEntities: SimulationResult['entities'],
+  sortedEntities: SimulationResult['entities'],
+  sortedYs: number[],
+  labelWidths: Map<string, number>,
 ) {
   const { px, py, pw, ph } = pane;
   // Coordinate system: fit width with zoom
@@ -334,23 +382,30 @@ function drawScene(
   ctx.rect(px, py, pw, ph);
   ctx.clip();
 
-  // Static + kinematic entities
-  for (const e of replay.entities) {
+  // Polylines: long static walls; iterate all (only ~22).
+  ctx.strokeStyle = '#e4e4e7';
+  ctx.lineWidth = Math.max(2, scale * 0.12);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const e of polylineEntities) {
+    if (e.shape.type !== 'polyline') continue;
     const ex = e.x;
     const ey = e.y;
-    if (e.shape.type === 'polyline') {
-      ctx.strokeStyle = '#e4e4e7';
-      ctx.lineWidth = Math.max(2, scale * 0.12);
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      let started = false;
-      for (let i = 0; i < e.shape.points.length; i++) {
-        const [px2, py2] = e.shape.points[i];
-        const wx = ex + px2;
-        const wy = ey + py2;
-        const [sxp, syp] = toPx(wx, wy);
-        if (syp < py - 50 && (i + 1 >= e.shape.points.length || toPx(ex + e.shape.points[i + 1][0], ey + e.shape.points[i + 1][1])[1] < py - 50)) {
+    const points = e.shape.points;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < points.length; i++) {
+      const [px2, py2] = points[i];
+      const sxp = (ex + px2) * scale + offsetX;
+      const syp = (ey + py2) * scale + offsetY;
+      if (syp < py - 50 || syp > py + ph + 50) {
+        // Cull: only break the path if the neighboring point is also off-screen,
+        // otherwise we'd drop the segment that crosses the viewport edge.
+        const np = points[i + 1];
+        const pp = points[i - 1];
+        const nextOff = !np || (ey + np[1]) * scale + offsetY < py - 50 || (ey + np[1]) * scale + offsetY > py + ph + 50;
+        const prevOff = !pp || (ey + pp[1]) * scale + offsetY < py - 50 || (ey + pp[1]) * scale + offsetY > py + ph + 50;
+        if (nextOff && prevOff) {
           if (started) {
             ctx.stroke();
             ctx.beginPath();
@@ -358,33 +413,55 @@ function drawScene(
           }
           continue;
         }
-        if (!started) {
-          ctx.moveTo(sxp, syp);
-          started = true;
-        } else {
-          ctx.lineTo(sxp, syp);
-        }
       }
-      if (started) ctx.stroke();
-    } else if (e.shape.type === 'box') {
+      if (!started) {
+        ctx.moveTo(sxp, syp);
+        started = true;
+      } else {
+        ctx.lineTo(sxp, syp);
+      }
+    }
+    if (started) ctx.stroke();
+  }
+
+  // Boxes + circles: binary-search the visible Y window so we skip ~80% of pegs every frame.
+  // Margin of 50px in pixel space converts to a small Y margin in world space.
+  const halfWorldH = ph / scale / 2 + 50 / scale;
+  const yMin = camY - halfWorldH;
+  const yMax = camY + halfWorldH;
+  const startIdx = lowerBound(sortedYs, yMin);
+  const endIdx = upperBound(sortedYs, yMax);
+
+  // Cache linear gradients for box pegs by pixel width — there are only ~6 unique widths,
+  // so we go from 172 createLinearGradient calls per frame down to ~6.
+  const boxGradCache = new Map<number, CanvasGradient>();
+  for (let k = startIdx; k < endIdx; k++) {
+    const e = sortedEntities[k];
+    const ex = e.x;
+    const ey = e.y;
+    if (e.shape.type === 'box') {
       const angle = e.angularVelocity * elapsedSec + e.shape.rotation;
-      const [sxp, syp] = toPx(ex, ey);
-      if (syp < py - 50 || syp > py + ph + 50) continue;
+      const sxp = ex * scale + offsetX;
+      const syp = ey * scale + offsetY;
       const w = e.shape.width * scale * 2;
       const h = e.shape.height * scale * 2;
+      let grad = boxGradCache.get(w);
+      if (!grad) {
+        grad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+        grad.addColorStop(0, '#0ea5b8');
+        grad.addColorStop(0.5, '#22d3ee');
+        grad.addColorStop(1, '#0ea5b8');
+        boxGradCache.set(w, grad);
+      }
       ctx.save();
       ctx.translate(sxp, syp);
       ctx.rotate(angle);
-      const grad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
-      grad.addColorStop(0, '#0ea5b8');
-      grad.addColorStop(0.5, '#22d3ee');
-      grad.addColorStop(1, '#0ea5b8');
       ctx.fillStyle = grad;
       ctx.fillRect(-w / 2, -h / 2, w, h);
       ctx.restore();
     } else if (e.shape.type === 'circle') {
-      const [sxp, syp] = toPx(ex, ey);
-      if (syp < py - 50 || syp > py + ph + 50) continue;
+      const sxp = ex * scale + offsetX;
+      const syp = ey * scale + offsetY;
       ctx.fillStyle = '#facc15';
       ctx.beginPath();
       ctx.arc(sxp, syp, e.shape.radius * scale, 0, Math.PI * 2);
@@ -405,6 +482,8 @@ function drawScene(
 
   // Marbles
   const r = MARBLE_RADIUS * scale;
+  ctx.font = `bold ${14 * dpr}px sans-serif`;
+  ctx.textAlign = 'center';
   for (let i = 0; i < replay.playerOrder.length; i++) {
     const token = replay.playerOrder[i];
     const player = playerByToken.get(token);
@@ -414,7 +493,8 @@ function drawScene(
     const yB = next[i * 2 + 1];
     const x = lerp(xA, xB, tFrac);
     const y = lerp(yA, yB, tFrac);
-    const [sxp, syp] = toPx(x, y);
+    const sxp = x * scale + offsetX;
+    const syp = y * scale + offsetY;
     if (syp < py - 30 || syp > py + ph + 30) continue;
 
     // shadow
@@ -438,18 +518,16 @@ function drawScene(
       ctx.stroke();
     }
 
-    // label above marble
+    // label above marble — width pre-measured at mount, no per-frame measureText
     const label = player?.nickname ?? '';
-    ctx.font = `${10 * dpr}px sans-serif`;
-    ctx.textAlign = 'center';
-    const labelW = ctx.measureText(label).width + 8 * dpr;
-    const labelH = 14 * dpr;
-    const labelY = syp - r - labelH - 2 * dpr;
+    const labelW = (labelWidths.get(token) ?? 0) + 10 * dpr;
+    const labelH = 19 * dpr;
+    const labelY = syp - r - labelH - 3 * dpr;
     ctx.fillStyle = isMe ? '#fbbf24' : 'rgba(0,0,0,0.7)';
-    roundRect(ctx, sxp - labelW / 2, labelY, labelW, labelH, 4 * dpr);
+    roundRect(ctx, sxp - labelW / 2, labelY, labelW, labelH, 5 * dpr);
     ctx.fill();
     ctx.fillStyle = isMe ? '#0b0b10' : '#ffffff';
-    ctx.fillText(label, sxp, labelY + 10 * dpr);
+    ctx.fillText(label, sxp, labelY + 14 * dpr);
   }
 
   ctx.restore();
@@ -499,8 +577,8 @@ function drawParticles(
       ctx.fillStyle = grad;
       ctx.fillRect(px, py, pw, ph);
     }
-    // Expanding ring (sonar)
-    const ringT = Math.min(1, t / 0.7);
+    // Expanding ring (sonar) — clamp ringT to [0,1] in case t briefly goes negative due to timer skew.
+    const ringT = Math.max(0, Math.min(1, t / 0.7));
     const ringR = ringT * scale * 5;
     const ringAlpha = (1 - ringT) * 0.9;
     ctx.strokeStyle = `rgba(255,255,255,${ringAlpha})`;
@@ -588,22 +666,18 @@ function drawLeaderboard(
   for (const f of finishers) rows.push({ token: f.token, rank: rows.length + 1, finished: true });
   for (const a of active) rows.push({ token: a.token, rank: rows.length + 1, finished: false });
 
-  const rowH = 26 * dpr;
-  const padding = 6 * dpr;
-  const panelW = Math.min(120 * dpr, W * 0.28);
-  const panelX = 6 * dpr;
-  const panelY = 6 * dpr;
+  const rowH = 36 * dpr;
+  const padding = 8 * dpr;
+  const panelW = Math.min(170 * dpr, W * 0.4);
+  const panelX = 8 * dpr;
+  // Push below the top-left "내 공 시점" pane label so they don't overlap.
+  const panelY = 56 * dpr;
   const panelH = padding * 2 + rowH * rows.length;
 
   // Background
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  roundRectPath(ctx, panelX, panelY, panelW, panelH, 8 * dpr);
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  roundRectPath(ctx, panelX, panelY, panelW, panelH, 10 * dpr);
   ctx.fill();
-
-  ctx.font = `bold ${10 * dpr}px sans-serif`;
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.textAlign = 'left';
-  // (Skip header — keep it tight on mobile)
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
@@ -613,36 +687,36 @@ function drawLeaderboard(
 
     // Row background highlight for me
     if (isMe) {
-      ctx.fillStyle = 'rgba(251,191,36,0.18)';
+      ctx.fillStyle = 'rgba(251,191,36,0.2)';
       ctx.fillRect(panelX + 2, ry + 1, panelW - 4, rowH - 2);
     }
 
     // Rank number
-    ctx.font = `bold ${11 * dpr}px sans-serif`;
+    ctx.font = `bold ${16 * dpr}px sans-serif`;
     ctx.textAlign = 'right';
     ctx.fillStyle = r.rank === 1 ? '#fbbf24' : r.rank === 2 ? '#cbd5e1' : r.rank === 3 ? '#fb923c' : '#9ca3af';
-    ctx.fillText(`${r.rank}`, panelX + 18 * dpr, ry + 17 * dpr);
+    ctx.fillText(`${r.rank}`, panelX + 26 * dpr, ry + 24 * dpr);
 
     // Color dot
     ctx.fillStyle = player?.color ?? '#666';
     ctx.beginPath();
-    ctx.arc(panelX + 28 * dpr, ry + rowH / 2, 5 * dpr, 0, Math.PI * 2);
+    ctx.arc(panelX + 40 * dpr, ry + rowH / 2, 7 * dpr, 0, Math.PI * 2);
     ctx.fill();
 
     // Nickname
-    ctx.font = `${11 * dpr}px sans-serif`;
+    ctx.font = `${15 * dpr}px sans-serif`;
     ctx.textAlign = 'left';
     ctx.fillStyle = isMe ? '#fbbf24' : r.finished ? 'rgba(255,255,255,0.55)' : '#ffffff';
-    const nameMaxW = panelW - 50 * dpr - (r.finished ? 14 * dpr : 0);
+    const nameMaxW = panelW - 68 * dpr - (r.finished ? 18 * dpr : 0);
     const name = ellipsize(ctx, player?.nickname ?? '', nameMaxW);
-    ctx.fillText(name, panelX + 38 * dpr, ry + 17 * dpr);
+    ctx.fillText(name, panelX + 54 * dpr, ry + 24 * dpr);
 
     // Finished check mark
     if (r.finished) {
-      ctx.font = `${10 * dpr}px sans-serif`;
+      ctx.font = `${14 * dpr}px sans-serif`;
       ctx.textAlign = 'right';
       ctx.fillStyle = '#10b981';
-      ctx.fillText('✓', panelX + panelW - 6 * dpr, ry + 17 * dpr);
+      ctx.fillText('✓', panelX + panelW - 8 * dpr, ry + 24 * dpr);
     }
   }
 }
@@ -711,4 +785,22 @@ function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
 function roundedClip(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   roundRectPath(ctx, x, y, w, h, r);
   ctx.clip();
+}
+function lowerBound(arr: number[], target: number): number {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+function upperBound(arr: number[], target: number): number {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] <= target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
