@@ -1,0 +1,16 @@
+ax-lunch-coffee
+================
+
+This product includes ported / adapted code from:
+
+* lazygyu/roulette
+  https://github.com/lazygyu/roulette
+  Copyright (c) 2023 LazyGyu
+  Licensed under the MIT License.
+
+  Files derived (with modifications, primarily injecting a seeded RNG to make the
+  simulation deterministic for multiplayer replay):
+   - src/games/marble/lazygyu/MapEntity.ts          (verbatim)
+   - src/games/marble/lazygyu/maps.ts               (verbatim)
+   - src/games/marble/lazygyu/physics.ts            (modified: Math.random → seeded rng)
+   - src/games/marble/sim.ts                        (uses lazygyu's marble spawn formula)
