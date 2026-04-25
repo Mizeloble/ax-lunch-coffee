@@ -30,10 +30,9 @@ export type SimulationResult = {
   zoomY: number;
   // box2d coordinate range (for camera sizing on client)
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
-  // Slow-motion ranges: each [startFrame, endFrame] inclusive plays back at slowFactor speed.
-  // Empty array means no slow-mo. Ranges are sorted and non-overlapping.
-  slowRanges: [number, number][];
-  slowFactor: number;
+  // Per-frame playback duration in ms. Continuous slow-mo curve baked in.
+  // Sum equals durationMs.
+  frameDurations: number[];
 };
 
 const FPS = 120; // recording FPS; client interpolates between frames if higher refresh
@@ -155,29 +154,38 @@ export async function simulateRace(
     for (const r of remaining) finishOrder.push(players[r.idx].playerToken);
   }
 
-  // Slow-motion: only the last finish (the moment 꼴등 is locked in). 1.2s before to 0.4s after.
-  const SLOWMO_FACTOR = 0.4;
-  const PRE_MS = 1200;
-  const POST_MS = 400;
-  const preF = Math.round((PRE_MS / 1000) * FPS);
-  const postF = Math.round((POST_MS / 1000) * FPS);
-  let maxFinishFrame = -1;
-  for (const ff of finishFrames) {
-    if (ff > maxFinishFrame) maxFinishFrame = ff;
-  }
-  const slowRanges: [number, number][] = [];
-  if (maxFinishFrame >= 0) {
-    slowRanges.push([
-      Math.max(0, maxFinishFrame - preF),
-      Math.min(frames.length - 1, maxFinishFrame + postF),
-    ]);
-  }
-  // Recompute durationMs to include the time-stretching from slow-mo
+  // Continuous slow-motion (lazygyu-style): time scales smoothly from 1.0 to SLOW_FLOOR
+  // as the would-be 꼴등 (last entry in finishOrder) approaches stage.zoomY. No more
+  // step-function windows — the curve is `floor + (1 - floor) * dist/threshold` clamped.
+  const ZOOM_THRESHOLD_M = 5;
+  const SLOW_FLOOR = 0.2;
   const realFrameMs = 1000 / FPS;
-  let stretchedDurationMs = frames.length * realFrameMs;
-  for (const [s, e] of slowRanges) {
-    stretchedDurationMs += (e - s + 1) * realFrameMs * (1 / SLOWMO_FACTOR - 1);
+  const frameDurations: number[] = new Array(frames.length).fill(realFrameMs);
+
+  // Find the loser's index in players[] (last entry in finishOrder).
+  let loserIdx = -1;
+  if (finishOrder.length > 0) {
+    const loserToken = finishOrder[finishOrder.length - 1];
+    for (let i = 0; i < players.length; i++) {
+      if (players[i].playerToken === loserToken) {
+        loserIdx = i;
+        break;
+      }
+    }
   }
+  if (loserIdx >= 0) {
+    for (let f = 0; f < frames.length; f++) {
+      const ly = frames[f][loserIdx * 2 + 1];
+      const goalDist = stage.zoomY - ly;
+      if (goalDist < ZOOM_THRESHOLD_M) {
+        const r = Math.max(0, goalDist / ZOOM_THRESHOLD_M);
+        const timeScale = SLOW_FLOOR + (1 - SLOW_FLOOR) * r;
+        frameDurations[f] = realFrameMs / timeScale;
+      }
+    }
+  }
+  let stretchedDurationMs = 0;
+  for (const d of frameDurations) stretchedDurationMs += d;
 
   // Compute coordinate bounds from static entities for camera sizing
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -207,8 +215,7 @@ export async function simulateRace(
     goalY: stage.goalY,
     zoomY: stage.zoomY,
     bounds: { minX, maxX, minY, maxY },
-    slowRanges,
-    slowFactor: SLOWMO_FACTOR,
+    frameDurations,
   };
 }
 

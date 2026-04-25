@@ -5,8 +5,9 @@ import type { SimulationResult } from './sim';
 
 const MARBLE_RADIUS = 0.25; // box2d meters, matches lazygyu
 const VIEW_HEIGHT_METERS = 22; // baseline meters of vertical track shown
-const ZOOM_THRESHOLD = 8; // meters from zoomY where the camera starts zooming in
-const ZOOM_MAX = 2.6; // max zoom multiplier near goal
+const ZOOM_THRESHOLD = 5; // meters from zoomY where the camera starts zooming in (lazygyu)
+const ZOOM_MAX = 4; // max zoom multiplier near goal (lazygyu uses 4×)
+const CAMERA_EASE_RATE = 6; // exponential ease constant — ~150ms time to converge 90%
 
 export type MarbleRendererProps = {
   startAt: number;
@@ -111,6 +112,18 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
     const mainPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '', particles: [], bursts: [], pulse: 0, shake: 0 };
     const insetPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '꼴등 시점', particles: [], bursts: [], pulse: 0, shake: 0 };
 
+    // Cumulative playback time at the START of each frame (cumMs[i] = sum of frameDurations[0..i-1]).
+    // Used to map wall-clock elapsed → frameF via binary search.
+    const frameDurations = replay.frameDurations;
+    const cumMs = new Float64Array(frameDurations.length + 1);
+    for (let i = 0; i < frameDurations.length; i++) cumMs[i + 1] = cumMs[i] + frameDurations[i];
+
+    // Stateful smooth camera (lazygyu-style): position and zoom ease toward target each frame
+    // instead of snapping. Re-initialized to target on the very first draw.
+    let camY = 0, camZoom = 1;
+    let insetCamY = 0, insetCamZoom = 1;
+    let camInit = false;
+
     let raf = 0;
     let lastT = performance.now();
     const draw = (now: number) => {
@@ -121,7 +134,7 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
       lastT = now;
 
       const elapsed = Math.max(0, Date.now() - startAt);
-      const frameF = elapsedToFrameF(elapsed, fps, replay.slowRanges, replay.slowFactor, totalFrames);
+      const frameF = elapsedToFrameF(elapsed, cumMs, frameDurations, totalFrames);
       const idx = Math.min(totalFrames - 1, Math.max(0, Math.floor(frameF)));
       const tFrac = Math.min(1, Math.max(0, frameF - idx));
       const cur = replay.frames[idx];
@@ -194,14 +207,24 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
       insetPane.pw = insetW;
       insetPane.ph = insetH;
 
-      // Camera Ys: when I'm done (or I AM the live 꼴등), follow the slowest marble — that's where
-      // the drama is. Otherwise follow my own marble.
-      const mainCamCenterY = iAmFinished ? liveLoserY : myYNow;
-      const insetCamCenterY = liveLoserY;
-
-      // Zoom multiplier: ramps up as the relevant Y gets close to zoomY
-      const mainZoom = computeZoom(mainCamCenterY, replay.zoomY);
-      const insetZoom = computeZoom(insetCamCenterY, replay.zoomY);
+      // Camera target: when I'm done, follow the live 꼴등 candidate. Otherwise follow myself.
+      // The actual cam values ease toward these targets so the view glides instead of snapping
+      // (lazygyu's `cur + (target - cur) * factor` per frame, made framerate-independent here).
+      const targetMainY = iAmFinished ? liveLoserY : myYNow;
+      const targetInsetY = liveLoserY;
+      const targetMainZoom = computeZoom(targetMainY, replay.zoomY);
+      const targetInsetZoom = computeZoom(targetInsetY, replay.zoomY);
+      if (!camInit) {
+        camY = targetMainY; camZoom = targetMainZoom;
+        insetCamY = targetInsetY; insetCamZoom = targetInsetZoom;
+        camInit = true;
+      } else {
+        const k = 1 - Math.exp(-dtSec * CAMERA_EASE_RATE);
+        camY += (targetMainY - camY) * k;
+        camZoom += (targetMainZoom - camZoom) * k;
+        insetCamY += (targetInsetY - insetCamY) * k;
+        insetCamZoom += (targetInsetZoom - insetCamZoom) * k;
+      }
 
       // Background
       ctx.fillStyle = '#0b0b10';
@@ -217,8 +240,8 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
       const mainShakeY = mainPane.shake > 0 ? (Math.random() - 0.5) * mainPane.shake * 8 * dpr : 0;
       ctx.save();
       if (mainShakeX || mainShakeY) ctx.translate(mainShakeX, mainShakeY);
-      drawScene(ctx, mainPane, mainCamCenterY, mainZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken, polylineEntities, sortedEntities, sortedYs, labelWidths);
-      drawParticles(ctx, mainPane, dtSec, dpr, mainCamCenterY, mainZoom, replay.bounds);
+      drawScene(ctx, mainPane, camY, camZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken, polylineEntities, sortedEntities, sortedYs, labelWidths);
+      drawParticles(ctx, mainPane, dtSec, dpr, camY, camZoom, replay.bounds);
       ctx.restore();
       drawPaneFrame(ctx, mainPane, dpr, true);
 
@@ -230,8 +253,8 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
         roundedClip(ctx, insetPane.px, insetPane.py, insetPane.pw, insetPane.ph, 10 * dpr);
         ctx.fillStyle = '#0b0b10';
         ctx.fillRect(insetPane.px, insetPane.py, insetPane.pw, insetPane.ph);
-        drawScene(ctx, insetPane, insetCamCenterY, insetZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken, polylineEntities, sortedEntities, sortedYs, labelWidths);
-        drawParticles(ctx, insetPane, dtSec, dpr, insetCamCenterY, insetZoom, replay.bounds);
+        drawScene(ctx, insetPane, insetCamY, insetCamZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken, polylineEntities, sortedEntities, sortedYs, labelWidths);
+        drawParticles(ctx, insetPane, dtSec, dpr, insetCamY, insetCamZoom, replay.bounds);
         ctx.restore();
         drawPaneFrame(ctx, insetPane, dpr, false);
       } else {
@@ -278,35 +301,23 @@ function computeZoom(camY: number, zoomY: number): number {
 
 function elapsedToFrameF(
   elapsedMs: number,
-  fps: number,
-  slowRanges: [number, number][],
-  slowFactor: number,
+  cumMs: Float64Array,
+  frameDurations: number[],
   totalFrames: number,
 ): number {
-  const realFrameMs = 1000 / fps;
-  const slowFrameMs = realFrameMs / slowFactor;
-  let frameCursor = 0;
-  let timeCursor = 0;
-  for (const [s, e] of slowRanges) {
-    // Normal-speed segment up to range start
-    const normalFrames = s - frameCursor;
-    const normalMs = normalFrames * realFrameMs;
-    if (elapsedMs <= timeCursor + normalMs) {
-      return Math.min(totalFrames - 1, frameCursor + (elapsedMs - timeCursor) / realFrameMs);
-    }
-    timeCursor += normalMs;
-    frameCursor = s;
-    // Slow-mo segment for range
-    const slowFrameCount = e - s + 1;
-    const slowMs = slowFrameCount * slowFrameMs;
-    if (elapsedMs <= timeCursor + slowMs) {
-      return Math.min(totalFrames - 1, s + (elapsedMs - timeCursor) / slowFrameMs);
-    }
-    timeCursor += slowMs;
-    frameCursor = e + 1;
+  if (elapsedMs <= 0) return 0;
+  const total = cumMs[cumMs.length - 1];
+  if (elapsedMs >= total) return totalFrames - 1;
+  // Binary search: largest N with cumMs[N] <= elapsedMs (cumMs[N] is time at start of frame N).
+  let lo = 0, hi = cumMs.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (cumMs[mid] <= elapsedMs) lo = mid;
+    else hi = mid - 1;
   }
-  // Final normal-speed tail
-  return Math.min(totalFrames - 1, frameCursor + (elapsedMs - timeCursor) / realFrameMs);
+  const frameStart = cumMs[lo];
+  const frac = (elapsedMs - frameStart) / frameDurations[lo];
+  return lo + Math.min(0.9999, frac);
 }
 
 function formatLoserLabel(): string {
