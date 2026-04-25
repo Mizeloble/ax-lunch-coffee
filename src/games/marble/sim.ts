@@ -36,9 +36,9 @@ export type SimulationResult = {
   slowFactor: number;
 };
 
-const FPS = 30; // recording FPS; client interpolates between frames if higher refresh
-const STEP_DT = 1 / 90; // physics substep — 90Hz for stable contacts with fast marbles
-const STEPS_PER_FRAME = 3; // 90 / 30 = 3 substeps per recorded frame
+const FPS = 120; // recording FPS; client interpolates between frames if higher refresh
+const STEP_DT = 1 / 240; // physics substep — 240Hz for stable contacts with fast marbles
+const STEPS_PER_FRAME = 2; // 240 / 120 = 2 substeps per recorded frame
 const MAX_SECONDS = 60;
 const MAX_FRAMES = MAX_SECONDS * FPS;
 
@@ -91,7 +91,9 @@ export async function simulateRace(
   const lastPos = new Map<number, { x: number; y: number }>();
   const stuckMs = new Map<number, number>();
   const STUCK_DELAY_MS = 1500;
-  const STUCK_DIST_SQ = 0.05 * 0.05; // less than 5cm moved
+  // Velocity threshold: ~1.5 m/s (originally "5cm per 30Hz frame"). Scale per-frame distance with FPS.
+  const stuckDistPerFrame = 0.05 * (30 / FPS);
+  const STUCK_DIST_SQ = stuckDistPerFrame * stuckDistPerFrame;
   const FRAME_MS = 1000 / FPS;
 
   let frameIdx = 0;
@@ -153,27 +155,22 @@ export async function simulateRace(
     for (const r of remaining) finishOrder.push(players[r.idx].playerToken);
   }
 
-  // Slow-motion: build short windows around each finish event so the climactic moments stretch out
-  // without making the whole race plod. Window: 0.8s before a finish through 0.2s after.
+  // Slow-motion: only the last finish (the moment 꼴등 is locked in). 1.2s before to 0.4s after.
   const SLOWMO_FACTOR = 0.4;
-  const PRE_MS = 800;
-  const POST_MS = 200;
+  const PRE_MS = 1200;
+  const POST_MS = 400;
   const preF = Math.round((PRE_MS / 1000) * FPS);
   const postF = Math.round((POST_MS / 1000) * FPS);
-  const rawRanges: [number, number][] = [];
+  let maxFinishFrame = -1;
   for (const ff of finishFrames) {
-    if (ff < 0) continue;
-    rawRanges.push([Math.max(0, ff - preF), Math.min(frames.length - 1, ff + postF)]);
+    if (ff > maxFinishFrame) maxFinishFrame = ff;
   }
-  rawRanges.sort((a, b) => a[0] - b[0]);
   const slowRanges: [number, number][] = [];
-  for (const r of rawRanges) {
-    const last = slowRanges[slowRanges.length - 1];
-    if (last && r[0] <= last[1] + 1) {
-      last[1] = Math.max(last[1], r[1]);
-    } else {
-      slowRanges.push([r[0], r[1]]);
-    }
+  if (maxFinishFrame >= 0) {
+    slowRanges.push([
+      Math.max(0, maxFinishFrame - preF),
+      Math.min(frames.length - 1, maxFinishFrame + postF),
+    ]);
   }
   // Recompute durationMs to include the time-stretching from slow-mo
   const realFrameMs = 1000 / FPS;

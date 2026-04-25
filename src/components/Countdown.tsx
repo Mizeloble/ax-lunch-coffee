@@ -2,17 +2,29 @@
 
 import { useEffect, useState } from 'react';
 
+const FLASH_MS = 700; // how long "시작!" lingers before auto-hiding
+
 export function Countdown({ startAt }: { startAt: number }) {
-  const [n, setN] = useState(() => Math.max(0, Math.ceil((startAt - Date.now()) / 1000)));
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const tick = () => setN(Math.max(0, Math.ceil((startAt - Date.now()) / 1000)));
+    const tick = () => setNow(Date.now());
     tick();
     const id = setInterval(tick, 100);
     return () => clearInterval(id);
   }, [startAt]);
 
-  if (n <= 0) {
+  const diff = startAt - now;
+
+  if (diff > 0) {
+    return (
+      <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 pointer-events-none">
+        <div className="text-9xl font-extrabold text-amber-400">{Math.ceil(diff / 1000)}</div>
+      </div>
+    );
+  }
+
+  if (-diff < FLASH_MS) {
     return (
       <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 pointer-events-none">
         <div className="text-7xl font-extrabold text-amber-400 animate-pulse">시작!</div>
@@ -20,9 +32,5 @@ export function Countdown({ startAt }: { startAt: number }) {
     );
   }
 
-  return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 pointer-events-none">
-      <div className="text-9xl font-extrabold text-amber-400">{n}</div>
-    </div>
-  );
+  return null;
 }
