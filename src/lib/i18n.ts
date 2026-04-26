@@ -1,7 +1,7 @@
 export const ko = {
   app: {
     title: '점심 커피내기',
-    subtitle: '옆자리 동료들과 같이, 폰으로',
+    subtitle: 'AX 전략그룹 동료들과 같이, 폰으로',
   },
   landing: {
     createRoom: '방 만들기',
@@ -57,6 +57,13 @@ export const ko = {
     roomNotFound: '방을 찾을 수 없어요',
     raceInProgress: '이미 진행 중인 게임이 있어요',
     full: '방이 꽉 찼어요',
+  },
+  credit: {
+    org: 'AX 전략그룹',
+    authorHandle: 'jjmize.kim@samsung.com',
+    authorUrl: 'mailto:jjmize.kim@samsung.com',
+    repoLabel: 'GitHub',
+    repoUrl: 'https://github.com/Mizeloble/ax-lunch-coffee/',
   },
 } as const;
 
