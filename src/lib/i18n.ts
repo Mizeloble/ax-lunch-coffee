@@ -49,6 +49,9 @@ export const ko = {
     youLost: '오늘은 내가 산다 ☕',
     youWon: '운 좋게 면제!',
     tapToContinue: '결과 보기',
+    fullRanking: '전체 순위',
+    replay: '다시 보기',
+    rank: (n: number) => `${n}등`,
   },
   errors: {
     roomNotFound: '방을 찾을 수 없어요',
