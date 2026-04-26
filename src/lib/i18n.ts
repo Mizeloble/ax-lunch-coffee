@@ -32,6 +32,15 @@ export const ko = {
   game: {
     countdown: '시작!',
     inProgress: '이미 게임 진행 중이에요',
+    myRankFirst: '🥇 1등 골인!',
+    myRankLast: '☕ 오늘은 내가 산다!',
+    myRankMid: (rank: number) => `${rank}등 골인!`,
+    myRankSubFirst: '운 좋게 면제!',
+    myRankSubLast: '커피값 결정 ☕',
+    myRankSubMid: (total: number) => `총 ${total}명 중`,
+    loserRevealed: (name: string) => name,
+    loserRevealedBadge: '꼴찌 결정!',
+    loserRevealedSub: '오늘 커피는 당신이!',
   },
   result: {
     losers: (n: number) => `오늘 커피는 ${n}명이!`,
@@ -39,6 +48,7 @@ export const ko = {
     changeGame: '게임 바꾸기',
     youLost: '오늘은 내가 산다 ☕',
     youWon: '운 좋게 면제!',
+    tapToContinue: '결과 보기',
   },
   errors: {
     roomNotFound: '방을 찾을 수 없어요',

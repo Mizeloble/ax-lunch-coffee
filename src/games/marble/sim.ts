@@ -30,8 +30,8 @@ export type SimulationResult = {
   zoomY: number;
   // box2d coordinate range (for camera sizing on client)
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
-  // Per-frame playback duration in ms. Continuous slow-mo curve baked in.
-  // Sum equals durationMs.
+  // Per-frame playback duration in ms. Currently uniform (no slow-mo) but kept as
+  // an array so future per-frame pacing tweaks don't require a wire-format change.
   frameDurations: number[];
 };
 
@@ -140,10 +140,14 @@ export async function simulateRace(
     frames.push(snap);
     frameIdx++;
 
-    if (finishedSet.size === players.length) break;
+    // Stop as soon as N-1 finish — the loser is mathematically decided at that moment,
+    // and watching them crawl across the line afterward is anticlimactic.
+    if (finishedSet.size >= players.length - 1) break;
   }
 
-  // Stragglers ranked by how far they got (higher y = closer to goal)
+  // Stragglers ranked by how far they got (higher y = closer to goal). With the
+  // N-1 exit above, this is normally just the loser — appended once so finishOrder
+  // is complete.
   if (finishedSet.size < players.length) {
     const lastFrame = frames[frames.length - 1];
     const remaining: { idx: number; y: number }[] = [];
@@ -154,38 +158,19 @@ export async function simulateRace(
     for (const r of remaining) finishOrder.push(players[r.idx].playerToken);
   }
 
-  // Continuous slow-motion (lazygyu-style): time scales smoothly from 1.0 to SLOW_FLOOR
-  // as the would-be 꼴등 (last entry in finishOrder) approaches stage.zoomY. No more
-  // step-function windows — the curve is `floor + (1 - floor) * dist/threshold` clamped.
-  const ZOOM_THRESHOLD_M = 5;
-  const SLOW_FLOOR = 0.2;
+  // Hold final state for ~1.6s so the loser-decided fanfare and personal rank cards
+  // have time to register before the result screen takes over.
+  const HOLD_FRAMES = Math.ceil(FPS * 1.6);
+  if (frames.length > 0) {
+    const lastSnap = frames[frames.length - 1];
+    for (let h = 0; h < HOLD_FRAMES; h++) frames.push(lastSnap.slice());
+  }
+
+  // Playback runs at recording FPS — no slow-motion. The N-1 reveal moment carries
+  // the drama on its own (fanfare + banner + 1.6s hold).
   const realFrameMs = 1000 / FPS;
   const frameDurations: number[] = new Array(frames.length).fill(realFrameMs);
-
-  // Find the loser's index in players[] (last entry in finishOrder).
-  let loserIdx = -1;
-  if (finishOrder.length > 0) {
-    const loserToken = finishOrder[finishOrder.length - 1];
-    for (let i = 0; i < players.length; i++) {
-      if (players[i].playerToken === loserToken) {
-        loserIdx = i;
-        break;
-      }
-    }
-  }
-  if (loserIdx >= 0) {
-    for (let f = 0; f < frames.length; f++) {
-      const ly = frames[f][loserIdx * 2 + 1];
-      const goalDist = stage.zoomY - ly;
-      if (goalDist < ZOOM_THRESHOLD_M) {
-        const r = Math.max(0, goalDist / ZOOM_THRESHOLD_M);
-        const timeScale = SLOW_FLOOR + (1 - SLOW_FLOOR) * r;
-        frameDurations[f] = realFrameMs / timeScale;
-      }
-    }
-  }
-  let stretchedDurationMs = 0;
-  for (const d of frameDurations) stretchedDurationMs += d;
+  const stretchedDurationMs = frames.length * realFrameMs;
 
   // Compute coordinate bounds from static entities for camera sizing
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
