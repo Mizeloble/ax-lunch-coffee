@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
-import { getSocket } from '@/lib/socket-client';
+import { getSocket, disposeSocket } from '@/lib/socket-client';
 import { loadIdentity, saveIdentity } from '@/lib/nickname-store';
 import { useRoomStore, type GameStartPayload, type PublicRoomState, type ResultPayload } from '@/store/room-store';
 import { Lobby } from '@/components/Lobby';
@@ -11,6 +12,12 @@ import { Countdown } from '@/components/Countdown';
 import { ResultScreen } from '@/components/ResultScreen';
 import { MarbleRenderer } from '@/games/marble/Renderer';
 import type { SimulationResult } from '@/games/marble/sim';
+
+// Auto-redirect to landing after the room sits in 'result' for this long, so a
+// forgotten tab (whether on the result screen, the post-replay prompt, or the
+// game screen waiting for ack) doesn't keep the WebSocket alive — and the Fly
+// machine awake — all day.
+const IDLE_REDIRECT_MS = 3 * 60_000;
 
 export default function RoomClient({
   roomId,
@@ -143,6 +150,21 @@ export default function RoomClient({
     setResultAcked(false);
     setReplayStartAt(null);
   }, [gameStart?.startAt]);
+
+  // Idle guard: when the room enters 'result' and stays there for IDLE_REDIRECT_MS,
+  // dispose the socket and bounce to landing. Triggered by status, not by which
+  // sub-screen is showing, so participants stuck on the post-replay prompt are
+  // covered too.
+  const status = state?.status;
+  const router = useRouter();
+  useEffect(() => {
+    if (status !== 'result') return;
+    const t = setTimeout(() => {
+      disposeSocket();
+      router.push('/');
+    }, IDLE_REDIRECT_MS);
+    return () => clearTimeout(t);
+  }, [status, router]);
 
   if (phase === 'error') {
     return (
