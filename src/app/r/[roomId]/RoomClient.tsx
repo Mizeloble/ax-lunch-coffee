@@ -35,6 +35,9 @@ export default function RoomClient({
   const [joinError, setJoinError] = useState<string | null>(null);
   const [busyJoin, setBusyJoin] = useState(false);
   const [identityNickname, setIdentityNickname] = useState<string>('');
+  // Gate the transition from race → result screen behind a tap, so the loser
+  // banner / rank card animations have time to land.
+  const [resultAcked, setResultAcked] = useState(false);
 
   const inviteUrl = useMemo(() => {
     if (typeof window === 'undefined') return '';
@@ -130,6 +133,12 @@ export default function RoomClient({
     if (fn) fn(nickname);
   }
 
+  // Reset the tap-gate whenever a new game begins. Must run before any early
+  // return so hook order stays stable across renders.
+  useEffect(() => {
+    setResultAcked(false);
+  }, [gameStart?.startAt]);
+
   if (phase === 'error') {
     return (
       <main className="min-h-dvh flex flex-col items-center justify-center px-6 text-center">
@@ -152,8 +161,14 @@ export default function RoomClient({
 
   // In-room rendering
   const showCountdown = !!gameStart && Date.now() < gameStart.startAt + 200;
-  const showGame = !!gameStart && state?.status !== 'lobby' && state?.status !== 'result';
-  const showResult = state?.status === 'result';
+  const inResult = state?.status === 'result';
+  const replayPlayed = !!gameStart;
+  // Keep the marble screen visible after the server flips to 'result' until the
+  // user taps through. Players who joined late (no gameStart) skip straight to
+  // the result screen since there's no replay to wait on.
+  const showGame = replayPlayed && state?.status !== 'lobby' && (!inResult || !resultAcked);
+  const showResult = inResult && (resultAcked || !replayPlayed);
+  const showResultPrompt = inResult && replayPlayed && !resultAcked;
 
   return (
     <>
@@ -176,6 +191,16 @@ export default function RoomClient({
       {showCountdown && gameStart && <Countdown startAt={gameStart.startAt} />}
 
       {showResult && <ResultScreen />}
+
+      {showResultPrompt && (
+        <button
+          type="button"
+          onClick={() => setResultAcked(true)}
+          className="fixed inset-x-0 bottom-6 z-30 mx-auto flex w-fit items-center gap-2 rounded-2xl bg-amber-400 px-8 py-4 text-base font-bold text-zinc-950 shadow-2xl shadow-amber-500/40 ring-1 ring-amber-300/60 transition active:scale-95 animate-pulse"
+        >
+          {ko.result.tapToContinue} →
+        </button>
+      )}
 
       {phase === 'need-nickname' && (
         <JoinModal
