@@ -38,6 +38,10 @@ export default function RoomClient({
   // Gate the transition from race → result screen behind a tap, so the loser
   // banner / rank card animations have time to land.
   const [resultAcked, setResultAcked] = useState(false);
+  // Replay-the-same-race state: when set, the renderer re-mounts with this startAt
+  // instead of the original gameStart.startAt. Cleared when the user dismisses to
+  // the result screen.
+  const [replayStartAt, setReplayStartAt] = useState<number | null>(null);
 
   const inviteUrl = useMemo(() => {
     if (typeof window === 'undefined') return '';
@@ -137,6 +141,7 @@ export default function RoomClient({
   // return so hook order stays stable across renders.
   useEffect(() => {
     setResultAcked(false);
+    setReplayStartAt(null);
   }, [gameStart?.startAt]);
 
   if (phase === 'error') {
@@ -160,7 +165,8 @@ export default function RoomClient({
   }
 
   // In-room rendering
-  const showCountdown = !!gameStart && Date.now() < gameStart.startAt + 200;
+  const effectiveStartAt = replayStartAt ?? gameStart?.startAt ?? 0;
+  const showCountdown = !!gameStart && Date.now() < effectiveStartAt + 200;
   const inResult = state?.status === 'result';
   const replayPlayed = !!gameStart;
   // Keep the marble screen visible after the server flips to 'result' until the
@@ -169,6 +175,11 @@ export default function RoomClient({
   const showGame = replayPlayed && state?.status !== 'lobby' && (!inResult || !resultAcked);
   const showResult = inResult && (resultAcked || !replayPlayed);
   const showResultPrompt = inResult && replayPlayed && !resultAcked;
+
+  function handleReplay() {
+    setReplayStartAt(Date.now() + 1500);
+    setResultAcked(false);
+  }
 
   return (
     <>
@@ -179,7 +190,8 @@ export default function RoomClient({
       {showGame && gameStart && gameStart.gameId === 'marble' && (
         <div className="fixed inset-0 z-20">
           <MarbleRenderer
-            startAt={gameStart.startAt}
+            key={effectiveStartAt}
+            startAt={effectiveStartAt}
             durationMs={gameStart.durationMs}
             replay={gameStart.replay as SimulationResult}
             players={gameStart.players}
@@ -188,9 +200,9 @@ export default function RoomClient({
         </div>
       )}
 
-      {showCountdown && gameStart && <Countdown startAt={gameStart.startAt} />}
+      {showCountdown && gameStart && <Countdown startAt={effectiveStartAt} />}
 
-      {showResult && <ResultScreen />}
+      {showResult && <ResultScreen onReplay={handleReplay} />}
 
       {showResultPrompt && (
         <button

@@ -6,11 +6,12 @@ import { useRoomStore } from '@/store/room-store';
 import { getSocket } from '@/lib/socket-client';
 import clsx from 'clsx';
 
-export function ResultScreen() {
+export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
   const result = useRoomStore((s) => s.result);
   const state = useRoomStore((s) => s.state);
   const myToken = useRoomStore((s) => s.myToken);
   const isHost = useRoomStore((s) => s.isHost);
+  const gameStart = useRoomStore((s) => s.gameStart);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -95,6 +96,13 @@ export function ResultScreen() {
 
   const iLost = !!myToken && result.losers.includes(myToken);
 
+  // Full ranking, in order from 1st → last. Resolve player metadata once.
+  const fullRanking = result.ranking
+    .map((tk) => state.players.find((p) => p.playerToken === tk))
+    .filter((p): p is NonNullable<typeof p> => !!p);
+
+  const canReplay = !!gameStart && !!onReplay;
+
   return (
     <main className="fixed inset-0 z-30 bg-[#0b0b10] flex flex-col items-center justify-center px-6 text-center overflow-hidden">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
@@ -120,24 +128,71 @@ export function ResultScreen() {
           {iLost ? ko.result.youLost : ko.result.youWon}
         </div>
 
-        {isHost && (
-          <div className="mt-10 space-y-2">
+        {fullRanking.length > 0 && (
+          <details className="mt-6 rounded-xl bg-zinc-900/70 px-4 py-3 text-left">
+            <summary className="text-xs font-medium text-zinc-400 cursor-pointer select-none list-none flex items-center justify-between">
+              <span>{ko.result.fullRanking}</span>
+              <span className="text-zinc-600">▾</span>
+            </summary>
+            <ul className="mt-3 space-y-1.5">
+              {fullRanking.map((p, i) => {
+                const rank = i + 1;
+                const isMe = p.playerToken === myToken;
+                return (
+                  <li
+                    key={p.playerToken}
+                    className={clsx(
+                      'flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm',
+                      isMe && 'bg-amber-400/15',
+                    )}
+                  >
+                    <span className="w-7 text-right text-xs font-bold text-zinc-500 tabular-nums">
+                      {ko.result.rank(rank)}
+                    </span>
+                    <span
+                      className="h-3 w-3 rounded-full shrink-0"
+                      style={{ background: p.color }}
+                      aria-hidden
+                    />
+                    <span className={clsx('truncate', isMe ? 'text-amber-300 font-bold' : 'text-zinc-200')}>
+                      {p.nickname}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
+        )}
+
+        <div className="mt-8 space-y-2">
+          {canReplay && (
             <button
               type="button"
-              onClick={() => getSocket().emit('start')}
-              className="w-full py-4 rounded-2xl bg-amber-400 text-zinc-900 font-bold text-lg active:scale-[0.98]"
-            >
-              {ko.result.again}
-            </button>
-            <button
-              type="button"
-              onClick={() => getSocket().emit('reset')}
+              onClick={onReplay}
               className="w-full py-3 rounded-xl bg-zinc-800 text-zinc-200 font-medium active:scale-[0.98]"
             >
-              {ko.result.changeGame}
+              {ko.result.replay}
             </button>
-          </div>
-        )}
+          )}
+          {isHost && (
+            <>
+              <button
+                type="button"
+                onClick={() => getSocket().emit('start')}
+                className="w-full py-4 rounded-2xl bg-amber-400 text-zinc-900 font-bold text-lg active:scale-[0.98]"
+              >
+                {ko.result.again}
+              </button>
+              <button
+                type="button"
+                onClick={() => getSocket().emit('reset')}
+                className="w-full py-3 rounded-xl bg-zinc-800 text-zinc-200 font-medium active:scale-[0.98]"
+              >
+                {ko.result.changeGame}
+              </button>
+            </>
+          )}
+        </div>
         {!isHost && <p className="text-xs text-zinc-500 mt-8">호스트가 다음 라운드를 시작할 거예요</p>}
       </div>
     </main>

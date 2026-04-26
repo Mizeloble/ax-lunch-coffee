@@ -2,13 +2,16 @@
 
 import { useEffect, useRef } from 'react';
 import { ko } from '@/lib/i18n';
+import { haptics } from './haptics';
 import type { SimulationResult } from './sim';
 
 const MARBLE_RADIUS = 0.25; // box2d meters, matches lazygyu
 const VIEW_HEIGHT_METERS = 22; // baseline meters of vertical track shown
 const ZOOM_THRESHOLD = 5; // meters from zoomY where the camera starts zooming in (lazygyu)
-const ZOOM_MAX = 4; // max zoom multiplier near goal (lazygyu uses 4×)
+// Capped at 3× (lazygyu uses 4×) to keep the outer track walls in view longer near the goal.
+const ZOOM_MAX = 3;
 const CAMERA_EASE_RATE = 6; // exponential ease constant — ~150ms time to converge 90%
+const INSET_FADE_RATE = 6; // ~250ms fade-in/out for the inset pane
 
 export type MarbleRendererProps = {
   startAt: number;
@@ -51,6 +54,7 @@ type Pane = {
   bursts: Burst[];
   pulse: number; // 0..1, label highlight when finish events happen
   shake: number; // 0..1, screen-shake intensity
+  alpha: number; // 0..1, eased visibility — used for inset show/hide transitions
 };
 
 export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerToken }: MarbleRendererProps) {
@@ -104,6 +108,9 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
 
     // Track which finish frames have been "consumed" for fanfare so we spawn each only once.
     let lastProcessedFrame = -1;
+    // Single-fire haptic flags
+    let firedMyFinishHaptic = false;
+    let firedLoserHaptic = false;
 
     // Loser = the very last entry in finishOrder. That's the player who pays for coffee.
     const loserToken = replay.finishOrder[replay.finishOrder.length - 1];
@@ -126,8 +133,8 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
           : replay.finishFrames[myIdx];
 
     // Two panes: main (my marble) and inset (꼴등 후보). Both share the same draw routine.
-    const mainPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '', particles: [], bursts: [], pulse: 0, shake: 0 };
-    const insetPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '꼴등 시점', particles: [], bursts: [], pulse: 0, shake: 0 };
+    const mainPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '', particles: [], bursts: [], pulse: 0, shake: 0, alpha: 1 };
+    const insetPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '꼴등 시점', particles: [], bursts: [], pulse: 0, shake: 0, alpha: 0 };
 
     // Cumulative playback time at the START of each frame (cumMs[i] = sum of frameDurations[0..i-1]).
     // Used to map wall-clock elapsed → frameF via binary search.
@@ -219,6 +226,16 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
       }
       lastProcessedFrame = idx;
 
+      // Haptic triggers — fire once each.
+      if (!firedMyFinishHaptic && myIdx >= 0 && replay.finishFrames[myIdx] >= 0 && idx >= replay.finishFrames[myIdx]) {
+        firedMyFinishHaptic = true;
+        haptics.myFinish();
+      }
+      if (!firedLoserHaptic && loserDecidedFrame >= 0 && idx >= loserDecidedFrame && myIdx === loserIdx) {
+        firedLoserHaptic = true;
+        haptics.loserConfirmed();
+      }
+
       // Layout: main fills full canvas; inset is top-right ~32% wide × 28% tall
       mainPane.px = 0;
       mainPane.py = 0;
@@ -265,25 +282,29 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
       const mainShakeY = mainPane.shake > 0 ? (Math.random() - 0.5) * mainPane.shake * 8 * dpr : 0;
       ctx.save();
       if (mainShakeX || mainShakeY) ctx.translate(mainShakeX, mainShakeY);
-      drawScene(ctx, mainPane, camY, camZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken, polylineEntities, sortedEntities, sortedYs, labelWidths);
+      drawScene(ctx, mainPane, camY, camZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken, polylineEntities, sortedEntities, sortedYs, labelWidths, idx);
       drawParticles(ctx, mainPane, dtSec, dpr, camY, camZoom, replay.bounds);
       ctx.restore();
       drawPaneFrame(ctx, mainPane, dpr, true);
 
-      // --- Draw inset pane (only when meaningfully different from main) ---
+      // --- Draw inset pane (eased show/hide so its border doesn't pop in/out) ---
       const showInset = !iAmFinished && myIdx !== liveLoserIdx;
-      if (showInset) {
+      const targetInsetAlpha = showInset ? 1 : 0;
+      const fadeK = 1 - Math.exp(-dtSec * INSET_FADE_RATE);
+      insetPane.alpha += (targetInsetAlpha - insetPane.alpha) * fadeK;
+      if (insetPane.alpha > 0.01) {
         // Clip to the inset rect
         ctx.save();
+        ctx.globalAlpha *= insetPane.alpha;
         roundedClip(ctx, insetPane.px, insetPane.py, insetPane.pw, insetPane.ph, 10 * dpr);
         ctx.fillStyle = '#0b0b10';
         ctx.fillRect(insetPane.px, insetPane.py, insetPane.pw, insetPane.ph);
-        drawScene(ctx, insetPane, insetCamY, insetCamZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken, polylineEntities, sortedEntities, sortedYs, labelWidths);
+        drawScene(ctx, insetPane, insetCamY, insetCamZoom, dpr, replay, cur, next, tFrac, elapsedSec, playerByToken, myPlayerToken, polylineEntities, sortedEntities, sortedYs, labelWidths, idx);
         drawParticles(ctx, insetPane, dtSec, dpr, insetCamY, insetCamZoom, replay.bounds);
         ctx.restore();
         drawPaneFrame(ctx, insetPane, dpr, false);
-      } else {
-        // still tick particles to drain them
+      } else if (insetPane.particles.length > 0) {
+        // Drain particle pool only after the fade has fully completed.
         insetPane.particles.length = 0;
       }
 
@@ -332,7 +353,10 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
 function computeZoom(camY: number, zoomY: number): number {
   const dist = Math.abs(zoomY - camY);
   if (dist >= ZOOM_THRESHOLD) return 1;
-  const t = 1 - dist / ZOOM_THRESHOLD;
+  // Smoothstep ramp: gentler entry/exit at the threshold edges so outer track walls
+  // don't pop out of view abruptly when the leader crosses into the zoom band.
+  const u = 1 - dist / ZOOM_THRESHOLD;
+  const t = u * u * (3 - 2 * u);
   return 1 + t * (ZOOM_MAX - 1);
 }
 
@@ -422,11 +446,17 @@ function drawScene(
   sortedEntities: SimulationResult['entities'],
   sortedYs: number[],
   labelWidths: Map<string, number>,
+  frameIdx: number,
 ) {
   const { px, py, pw, ph } = pane;
-  // Coordinate system: fit width with zoom
+  // Coordinate system: fit width with zoom. Shrink the available width by a small
+  // horizontal margin so the outermost track walls aren't drawn flush with the canvas
+  // edge — half their stroke would otherwise fall outside the canvas, making the
+  // outer perimeter appear to flicker/disappear as the wall zigzags inward and back.
+  const horizontalMargin = 12 * dpr;
+  const fitWidth = Math.max(1, pw - horizontalMargin * 2);
   const trackXSpan = Math.max(replay.bounds.maxX - replay.bounds.minX, 16);
-  const baseScale = Math.min(pw / trackXSpan, ph / VIEW_HEIGHT_METERS);
+  const baseScale = Math.min(fitWidth / trackXSpan, ph / VIEW_HEIGHT_METERS);
   const scale = baseScale * zoom;
   const trackCenterX = (replay.bounds.minX + replay.bounds.maxX) / 2;
   const offsetX = px + pw / 2 - trackCenterX * scale;
@@ -445,6 +475,9 @@ function drawScene(
   ctx.lineWidth = Math.max(2, scale * 0.12);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+  const cullPad = 50;
+  const offScreen = (sxp: number, syp: number) =>
+    syp < py - cullPad || syp > py + ph + cullPad || sxp < px - cullPad || sxp > px + pw + cullPad;
   for (const e of polylineEntities) {
     if (e.shape.type !== 'polyline') continue;
     const ex = e.x;
@@ -456,13 +489,13 @@ function drawScene(
       const [px2, py2] = points[i];
       const sxp = (ex + px2) * scale + offsetX;
       const syp = (ey + py2) * scale + offsetY;
-      if (syp < py - 50 || syp > py + ph + 50) {
+      if (offScreen(sxp, syp)) {
         // Cull: only break the path if the neighboring point is also off-screen,
         // otherwise we'd drop the segment that crosses the viewport edge.
         const np = points[i + 1];
         const pp = points[i - 1];
-        const nextOff = !np || (ey + np[1]) * scale + offsetY < py - 50 || (ey + np[1]) * scale + offsetY > py + ph + 50;
-        const prevOff = !pp || (ey + pp[1]) * scale + offsetY < py - 50 || (ey + pp[1]) * scale + offsetY > py + ph + 50;
+        const nextOff = !np || offScreen((ex + np[0]) * scale + offsetX, (ey + np[1]) * scale + offsetY);
+        const prevOff = !pp || offScreen((ex + pp[0]) * scale + offsetX, (ey + pp[1]) * scale + offsetY);
         if (nextOff && prevOff) {
           if (started) {
             ctx.stroke();
@@ -542,6 +575,8 @@ function drawScene(
   const r = MARBLE_RADIUS * scale;
   ctx.font = `bold ${14 * dpr}px sans-serif`;
   ctx.textAlign = 'center';
+  // Pulse phase shared across the frame's my-marble effects.
+  const pulseT = (Math.sin(elapsedSec * 5) + 1) / 2; // 0..1
   for (let i = 0; i < replay.playerOrder.length; i++) {
     const token = replay.playerOrder[i];
     const player = playerByToken.get(token);
@@ -553,7 +588,51 @@ function drawScene(
     const y = lerp(yA, yB, tFrac);
     const sxp = x * scale + offsetX;
     const syp = y * scale + offsetY;
-    if (syp < py - 30 || syp > py + ph + 30) continue;
+    const isMe = token === myPlayerToken;
+    const offTop = syp < py - 30;
+    const offBottom = syp > py + ph + 30;
+    if (offTop || offBottom) {
+      // Off-screen marbles are skipped entirely except for "my marble" — give the user
+      // a chevron pinned to the closer pane edge so they always know which direction
+      // their marble is.
+      if (isMe) {
+        const arrowX = Math.max(px + 18 * dpr, Math.min(px + pw - 18 * dpr, sxp));
+        const arrowY = offTop ? py + 22 * dpr : py + ph - 22 * dpr;
+        ctx.save();
+        ctx.translate(arrowX, arrowY);
+        if (offBottom) ctx.rotate(Math.PI);
+        ctx.fillStyle = '#fbbf24';
+        ctx.globalAlpha = 0.85;
+        ctx.beginPath();
+        ctx.moveTo(0, -10 * dpr);
+        ctx.lineTo(9 * dpr, 7 * dpr);
+        ctx.lineTo(-9 * dpr, 7 * dpr);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      continue;
+    }
+
+    // Trail (my marble only) — sparse fading dots from prior integer frames.
+    if (isMe) {
+      for (let k = 1; k <= 6; k++) {
+        const fIdx = frameIdx - k * 3;
+        if (fIdx < 0) break;
+        const trailFrame = replay.frames[fIdx];
+        if (!trailFrame) break;
+        const tx = trailFrame[i * 2];
+        const ty = trailFrame[i * 2 + 1];
+        const txp = tx * scale + offsetX;
+        const typ = ty * scale + offsetY;
+        if (offScreen(txp, typ)) continue;
+        const a = 0.28 * (1 - k / 7);
+        ctx.fillStyle = `rgba(255,255,255,${a})`;
+        ctx.beginPath();
+        ctx.arc(txp, typ, r * (1 - k * 0.1), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
 
     // shadow
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
@@ -562,17 +641,19 @@ function drawScene(
     ctx.fill();
 
     // body
-    const isMe = token === myPlayerToken;
     ctx.fillStyle = player?.color ?? '#aaa';
     ctx.beginPath();
     ctx.arc(sxp, syp, r, 0, Math.PI * 2);
     ctx.fill();
 
     if (isMe) {
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2 * dpr;
+      // Pulsing halo — far more visible than the previous static 2px ring.
+      const haloR = r + (4 + pulseT * 2) * dpr;
+      const haloAlpha = 0.45 + 0.4 * pulseT;
+      ctx.strokeStyle = `rgba(255,255,255,${haloAlpha})`;
+      ctx.lineWidth = 2.5 * dpr;
       ctx.beginPath();
-      ctx.arc(sxp, syp, r + 2 * dpr, 0, Math.PI * 2);
+      ctx.arc(sxp, syp, haloR, 0, Math.PI * 2);
       ctx.stroke();
     }
 
@@ -601,8 +682,11 @@ function drawParticles(
   bounds: { minX: number; maxX: number },
 ) {
   const { px, py, pw, ph, particles, bursts } = pane;
+  // Mirror drawScene's horizontal margin so particles use the same world→pixel mapping.
+  const horizontalMargin = 12 * dpr;
+  const fitWidth = Math.max(1, pw - horizontalMargin * 2);
   const trackXSpan = Math.max(bounds.maxX - bounds.minX, 16);
-  const baseScale = Math.min(pw / trackXSpan, ph / VIEW_HEIGHT_METERS);
+  const baseScale = Math.min(fitWidth / trackXSpan, ph / VIEW_HEIGHT_METERS);
   const scale = baseScale * zoom;
   const trackCenterX = (bounds.minX + bounds.maxX) / 2;
   const offsetX = px + pw / 2 - trackCenterX * scale;
@@ -1028,7 +1112,10 @@ function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
 }
 
 function drawPaneFrame(ctx: CanvasRenderingContext2D, pane: Pane, dpr: number, isMain: boolean) {
-  const { px, py, pw, ph, label, pulse } = pane;
+  const { px, py, pw, ph, label, pulse, alpha } = pane;
+  if (alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
   // Border
   if (!isMain) {
     ctx.strokeStyle = pulse > 0.05 ? '#fbbf24' : 'rgba(255,255,255,0.45)';
@@ -1052,6 +1139,7 @@ function drawPaneFrame(ctx: CanvasRenderingContext2D, pane: Pane, dpr: number, i
     ctx.fillStyle = pulse > 0.05 ? '#0b0b10' : '#ffffff';
     ctx.fillText(label, bx + padding, by + badgeH * 0.7);
   }
+  ctx.restore();
 }
 
 function lerp(a: number, b: number, t: number) {
