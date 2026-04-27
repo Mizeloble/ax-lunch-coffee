@@ -15,12 +15,16 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
   const isHost = useRoomStore((s) => s.isHost);
   const myToken = useRoomStore((s) => s.myToken);
   const [showInvite, setShowInvite] = useState(false);
+  const [manualValue, setManualValue] = useState('');
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [manualBusy, setManualBusy] = useState(false);
 
   if (!state) return null;
 
   const me = state.players.find((p) => p.playerToken === myToken);
   const connectedCount = state.players.filter((p) => p.connected).length;
   const canStart = isHost && connectedCount >= 2;
+  const canManageRoster = isHost && (state.status === 'lobby' || state.status === 'result');
 
   function setLoserCount(c: number) {
     getSocket().emit('setLoserCount', { count: c });
@@ -30,6 +34,36 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
   }
   function start() {
     getSocket().emit('start');
+  }
+
+  function submitManualAdd() {
+    const trimmed = manualValue.trim();
+    if (trimmed.length < 1 || trimmed.length > 10) {
+      setManualError(ko.lobby.addManualErrors.badNick);
+      return;
+    }
+    setManualBusy(true);
+    setManualError(null);
+    type AddAck = { ok: true; playerToken: string } | { ok: false; code: string; message: string };
+    getSocket().emit('host:addPlayer', { nickname: trimmed }, (res: AddAck) => {
+      setManualBusy(false);
+      if (res.ok) {
+        setManualValue('');
+        return;
+      }
+      const errs = ko.lobby.addManualErrors;
+      const msg =
+        res.code === 'DUP_NICK' ? errs.duplicate
+        : res.code === 'FULL' ? errs.full
+        : res.code === 'BAD_NICK' ? errs.badNick
+        : res.code === 'BAD_STATE' ? errs.badState
+        : errs.generic;
+      setManualError(msg);
+    });
+  }
+
+  function removeManual(playerToken: string) {
+    getSocket().emit('host:removePlayer', { playerToken });
   }
 
   return (
@@ -77,24 +111,70 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
           <div className="text-xs text-zinc-400 mb-2">
             참가자 {connectedCount}명 {state.players.some((p) => !p.connected) && '(일부 재접속 대기)'}
           </div>
-          <ul className="grid grid-cols-2 gap-2">
-            {state.players.map((p) => (
-              <li
-                key={p.playerToken}
-                className={clsx(
-                  'rounded-xl px-3 py-2 text-sm flex items-center gap-2 border',
-                  p.connected ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-900/40 border-zinc-800/50 opacity-60',
-                )}
-              >
-                <span
-                  aria-hidden
-                  className="inline-block w-3 h-3 rounded-full"
-                  style={{ background: p.color }}
+
+          {canManageRoster && (
+            <div className="mb-3">
+              <div className="flex gap-2">
+                <input
+                  inputMode="text"
+                  maxLength={10}
+                  value={manualValue}
+                  onChange={(e) => {
+                    setManualValue(e.target.value);
+                    if (manualError) setManualError(null);
+                  }}
+                  placeholder={ko.lobby.addManualPlaceholder}
+                  aria-label={ko.lobby.addManualTitle}
+                  className="flex-1 min-w-0 px-3 py-3 rounded-xl bg-zinc-800 border border-zinc-700 text-sm focus:outline-none focus:border-amber-400"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !manualBusy) submitManualAdd();
+                  }}
                 />
-                <span className="truncate">{p.nickname}</span>
-                {p.playerToken === myToken && <span className="ml-auto text-[10px] text-amber-400">나</span>}
-              </li>
-            ))}
+                <button
+                  type="button"
+                  disabled={manualBusy || manualValue.trim().length === 0}
+                  onClick={submitManualAdd}
+                  className="px-4 py-3 rounded-xl bg-zinc-700 text-zinc-100 text-sm font-bold disabled:opacity-50 active:scale-[0.98]"
+                >
+                  {ko.lobby.addManualSubmit}
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-zinc-500">{ko.lobby.addManualHint}</p>
+              {manualError && <p className="mt-1 text-xs text-rose-400">{manualError}</p>}
+            </div>
+          )}
+
+          <ul className="grid grid-cols-2 gap-2">
+            {state.players.map((p) => {
+              const showRemove = canManageRoster && p.manual && p.playerToken !== myToken;
+              return (
+                <li
+                  key={p.playerToken}
+                  className={clsx(
+                    'rounded-xl px-3 py-2 text-sm flex items-center gap-2 border',
+                    p.connected ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-900/40 border-zinc-800/50 opacity-60',
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="inline-block w-3 h-3 rounded-full shrink-0"
+                    style={{ background: p.color }}
+                  />
+                  <span className="truncate">{p.nickname}</span>
+                  {p.playerToken === myToken && <span className="ml-auto text-[10px] text-amber-400">나</span>}
+                  {showRemove && (
+                    <button
+                      type="button"
+                      onClick={() => removeManual(p.playerToken)}
+                      aria-label={ko.lobby.removeManualAria(p.nickname)}
+                      className="ml-auto -mr-1 w-7 h-7 rounded-full text-zinc-400 hover:text-rose-300 active:text-rose-400 active:scale-95 flex items-center justify-center text-base leading-none"
+                    >
+                      ×
+                    </button>
+                  )}
+                </li>
+              );
+            })}
             {state.players.length === 0 && (
               <li className="col-span-2 text-zinc-500 text-sm">{ko.lobby.waiting}…</li>
             )}

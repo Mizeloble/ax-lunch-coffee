@@ -7,6 +7,7 @@ export type PublicPlayer = {
   nickname: string;
   connected: boolean;
   color: string;
+  manual: boolean;
 };
 
 export type PublicRoomState = {

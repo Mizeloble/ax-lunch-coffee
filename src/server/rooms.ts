@@ -4,13 +4,14 @@ export type GameId = 'marble' | 'slot' | 'elimination' | 'reaction';
 export type RoomStatus = 'lobby' | 'countdown' | 'playing' | 'result';
 
 export type Player = {
-  socketId: string | null; // null while disconnected (within grace window)
+  socketId: string | null; // null while disconnected (within grace window) or for host-added players
   playerToken: string;
   nickname: string;
   joinedAt: number;
   connected: boolean;
   graceTimer?: NodeJS.Timeout;
   color: string;
+  manual: boolean; // host-added (no device); freely removable by host
 };
 
 export type ReplayPayload = {
@@ -86,6 +87,7 @@ function seedDevBots(room: RoomState) {
       joinedAt: Date.now(),
       connected: true,
       color,
+      manual: true,
     });
   }
 }
@@ -104,12 +106,15 @@ export function deleteRoom(roomId: string) {
   rooms.delete(roomId);
 }
 
-export function addPlayer(room: RoomState, params: { nickname: string; playerToken?: string; socketId: string }): Player {
+export function addPlayer(
+  room: RoomState,
+  params: { nickname: string; playerToken?: string; socketId: string | null; manual?: boolean },
+): Player {
   const token = params.playerToken ?? newPlayerToken();
   const existing = room.players.get(token);
   if (existing) {
     if (existing.graceTimer) clearTimeout(existing.graceTimer);
-    existing.socketId = params.socketId;
+    if (params.socketId !== null) existing.socketId = params.socketId;
     existing.connected = true;
     existing.nickname = params.nickname;
     return existing;
@@ -122,6 +127,7 @@ export function addPlayer(room: RoomState, params: { nickname: string; playerTok
     joinedAt: Date.now(),
     connected: true,
     color,
+    manual: params.manual ?? false,
   };
   room.players.set(token, p);
   touch(room);
@@ -163,6 +169,7 @@ export function snapshotPlayers(room: RoomState) {
     nickname: p.nickname,
     connected: p.connected,
     color: p.color,
+    manual: p.manual,
   }));
 }
 

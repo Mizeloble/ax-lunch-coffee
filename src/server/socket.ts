@@ -42,6 +42,14 @@ type ClientToServerEvents = {
   setGameId: (payload: { gameId: GameId }) => void;
   start: () => void;
   reset: () => void;
+  'host:addPlayer': (
+    payload: { nickname: string },
+    ack: (res: { ok: true; playerToken: string } | { ok: false; code: string; message: string }) => void,
+  ) => void;
+  'host:removePlayer': (
+    payload: { playerToken: string },
+    ack?: (res: { ok: true } | { ok: false; code: string; message: string }) => void,
+  ) => void;
 };
 
 export function attachSocketHandlers(io: IOServer<ClientToServerEvents, ServerToClientEvents>) {
@@ -80,6 +88,58 @@ export function attachSocketHandlers(io: IOServer<ClientToServerEvents, ServerTo
       socket.join(room.id);
       ack({ ok: true, playerToken: player.playerToken, isHost });
       io.to(room.id).emit('state', publicRoomState(room));
+    });
+
+    socket.on('host:addPlayer', (payload, ack) => {
+      const room = currentRoomId ? getRoom(currentRoomId) : null;
+      if (!room) return ack({ ok: false, code: 'NO_ROOM', message: '방을 찾을 수 없어요' });
+      if (!isCurrentSocketHost(room, socket)) return ack({ ok: false, code: 'NOT_HOST', message: '호스트만 가능해요' });
+      if (room.status !== 'lobby' && room.status !== 'result') {
+        return ack({ ok: false, code: 'BAD_STATE', message: '게임 진행 중에는 추가할 수 없어요' });
+      }
+      if (room.players.size >= MAX_PLAYERS) {
+        return ack({ ok: false, code: 'FULL', message: '방이 꽉 찼어요' });
+      }
+      const nickname = sanitizeNickname(payload.nickname);
+      if (!nickname) return ack({ ok: false, code: 'BAD_NICK', message: '닉네임을 확인해주세요' });
+      for (const p of room.players.values()) {
+        if (p.nickname === nickname) {
+          return ack({ ok: false, code: 'DUP_NICK', message: '같은 닉네임이 이미 있어요' });
+        }
+      }
+      const player = addPlayer(room, { nickname, socketId: null, manual: true });
+      io.to(room.id).emit('state', publicRoomState(room));
+      ack({ ok: true, playerToken: player.playerToken });
+    });
+
+    socket.on('host:removePlayer', ({ playerToken }, ack) => {
+      const room = currentRoomId ? getRoom(currentRoomId) : null;
+      if (!room) {
+        ack?.({ ok: false, code: 'NO_ROOM', message: '방을 찾을 수 없어요' });
+        return;
+      }
+      if (!isCurrentSocketHost(room, socket)) {
+        ack?.({ ok: false, code: 'NOT_HOST', message: '호스트만 가능해요' });
+        return;
+      }
+      if (room.status !== 'lobby' && room.status !== 'result') {
+        ack?.({ ok: false, code: 'BAD_STATE', message: '게임 진행 중에는 변경할 수 없어요' });
+        return;
+      }
+      const target = room.players.get(playerToken);
+      if (!target) {
+        ack?.({ ok: false, code: 'NO_PLAYER', message: '참가자를 찾을 수 없어요' });
+        return;
+      }
+      if (!target.manual) {
+        ack?.({ ok: false, code: 'NOT_MANUAL', message: '직접 추가한 참가자만 제거할 수 있어요' });
+        return;
+      }
+      if (target.graceTimer) clearTimeout(target.graceTimer);
+      room.players.delete(playerToken);
+      touch(room);
+      io.to(room.id).emit('state', publicRoomState(room));
+      ack?.({ ok: true });
     });
 
     socket.on('setLoserCount', ({ count }) => {

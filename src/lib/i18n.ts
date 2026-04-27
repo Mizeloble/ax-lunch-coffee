@@ -21,6 +21,18 @@ export const ko = {
     nicknameBadge: (name: string) => `${name}(으)로 입장됨`,
     changeNickname: '바꾸기',
     comingSoon: '준비 중',
+    addManualTitle: '직접 추가',
+    addManualHint: '폰 없는 동료를 호스트가 대신 등록',
+    addManualPlaceholder: '닉네임 입력',
+    addManualSubmit: '추가',
+    removeManualAria: (name: string) => `${name} 제거`,
+    addManualErrors: {
+      duplicate: '같은 닉네임이 이미 있어요',
+      full: '방이 꽉 찼어요',
+      badNick: '1~10자로 입력해주세요',
+      badState: '게임 진행 중에는 추가할 수 없어요',
+      generic: '추가할 수 없어요',
+    },
   },
   join: {
     title: '닉네임 입력',
