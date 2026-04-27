@@ -5,7 +5,6 @@ import { ko } from '@/lib/i18n';
 import { useRoomStore } from '@/store/room-store';
 import { GamePicker } from './GamePicker';
 import { InviteSheet } from './InviteSheet';
-import { QRCode } from './QRCode';
 import { getSocket } from '@/lib/socket-client';
 import type { GameId } from '@/games/types';
 import clsx from 'clsx';
@@ -15,6 +14,7 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
   const isHost = useRoomStore((s) => s.isHost);
   const myToken = useRoomStore((s) => s.myToken);
   const [showInvite, setShowInvite] = useState(false);
+  const [showManual, setShowManual] = useState(false);
   const [manualValue, setManualValue] = useState('');
   const [manualError, setManualError] = useState<string | null>(null);
   const [manualBusy, setManualBusy] = useState(false);
@@ -23,6 +23,7 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
 
   const me = state.players.find((p) => p.playerToken === myToken);
   const connectedCount = state.players.filter((p) => p.connected).length;
+  const someOffline = state.players.some((p) => !p.connected);
   const canStart = isHost && connectedCount >= 2;
   const canManageRoster = isHost && (state.status === 'lobby' || state.status === 'result');
 
@@ -49,6 +50,7 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
       setManualBusy(false);
       if (res.ok) {
         setManualValue('');
+        setShowManual(false);
         return;
       }
       const errs = ko.lobby.addManualErrors;
@@ -68,54 +70,157 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
 
   return (
     <main className="min-h-dvh flex flex-col">
-      {/* top bar */}
-      <header className="px-4 pt-4 pb-2 flex items-center justify-between">
-        <div className="text-sm">
-          <div className="font-bold text-base">{ko.app.title}</div>
-          <div className="text-zinc-500 text-xs">방 {state.id}</div>
+      {/* top bar — pill-shaped invite button on the right */}
+      <header className="px-4 pt-4 pb-2 flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-bold text-base truncate -tracking-wide">{ko.app.title}</div>
+          <div className="text-zinc-500 text-[11px] mt-0.5">
+            방 {state.id}{isHost ? ' · 호스트' : ''}
+          </div>
         </div>
         <button
           type="button"
           onClick={() => setShowInvite(true)}
-          className="rounded-full bg-zinc-800 text-zinc-100 px-3 py-2 text-sm font-medium active:scale-[0.98]"
+          className="inline-flex items-center gap-1.5 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-100 px-3.5 py-2 text-[13px] font-semibold flex-shrink-0 whitespace-nowrap active:scale-[0.98]"
         >
-          📤 {ko.lobby.invite}
+          <svg width={14} height={14} viewBox="0 0 20 20" aria-hidden>
+            <rect x={2} y={2} width={6} height={6} fill="currentColor" />
+            <rect x={12} y={2} width={6} height={6} fill="currentColor" />
+            <rect x={2} y={12} width={6} height={6} fill="currentColor" />
+            <rect x={11} y={11} width={3} height={3} fill="currentColor" />
+            <rect x={15} y={15} width={3} height={3} fill="currentColor" />
+          </svg>
+          {ko.lobby.inviteShort}
         </button>
       </header>
 
       {/* nickname badge */}
       {me && (
-        <div className="px-4 pt-1 text-xs text-zinc-400 flex items-center gap-2">
+        <div className="px-4 pt-1 text-xs text-zinc-400 flex items-center gap-1.5">
           <span>{ko.lobby.nicknameBadge(me.nickname)}</span>
-          <button type="button" onClick={onChangeNickname} className="text-amber-400 underline-offset-2 hover:underline">
-            [{ko.lobby.changeNickname}]
+          <button
+            type="button"
+            onClick={onChangeNickname}
+            className="text-amber-200 underline-offset-2 underline decoration-amber-200/40 hover:decoration-amber-200"
+          >
+            {ko.lobby.changeNickname}
           </button>
         </div>
       )}
 
-      <section className="px-4 mt-4 space-y-5 flex-1 overflow-auto pb-32">
-        {/* host: QR; guest: smaller mini QR + waiting message */}
+      <section className="px-4 mt-5 space-y-5 flex-1 overflow-auto pb-32">
+        {/* host controls first */}
         {isHost ? (
-          <div className="flex flex-col items-center gap-2 mt-2">
-            <QRCode value={inviteUrl} size={224} />
-            <p className="text-xs text-zinc-400">옆자리 동료가 카메라로 찍으면 입장</p>
-          </div>
+          <>
+            <div>
+              <Eyebrow>{ko.lobby.chooseGame}</Eyebrow>
+              <GamePicker selected={state.gameId} onSelect={setGameId} />
+            </div>
+
+            <div>
+              <Eyebrow>{ko.lobby.loserCount}</Eyebrow>
+              <div className="flex gap-2">
+                {[1, 2, 3].map((n) => {
+                  const isSelected = state.loserCount === n;
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setLoserCount(n)}
+                      className={clsx(
+                        'flex-1 py-3.5 rounded-xl font-bold text-[15px] border-[1.5px]',
+                        isSelected
+                          ? 'border-amber-600 bg-amber-600/10 text-amber-200'
+                          : 'border-zinc-700 bg-zinc-900 text-zinc-100',
+                      )}
+                    >
+                      {n}명
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
         ) : (
-          <div className="rounded-2xl bg-zinc-900 px-4 py-3 text-sm text-zinc-300">
-            호스트가 게임을 고르는 중이에요. 같이 기다려요.
+          <div className="rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 text-sm text-zinc-300">
+            {ko.lobby.waitingHostPicking}
           </div>
         )}
 
-        {/* players list */}
+        {/* participants */}
         <div>
-          <div className="text-xs text-zinc-400 mb-2">
-            참가자 {connectedCount}명 {state.players.some((p) => !p.connected) && '(일부 재접속 대기)'}
+          <div className="text-[11px] text-zinc-400 mb-2 font-bold uppercase tracking-[0.05em] flex justify-between items-center">
+            <span>참가자 {connectedCount}명</span>
+            {someOffline && (
+              <span className="text-zinc-600 normal-case tracking-normal font-normal">
+                {ko.lobby.rosterSomeOffline}
+              </span>
+            )}
           </div>
 
-          {canManageRoster && (
-            <div className="mb-3">
+          <ul className="grid grid-cols-2 gap-2">
+            {state.players.map((p) => {
+              const showRemove = canManageRoster && p.manual && p.playerToken !== myToken;
+              const isMe = p.playerToken === myToken;
+              return (
+                <li
+                  key={p.playerToken}
+                  className={clsx(
+                    'rounded-xl px-3 py-2.5 text-sm flex items-center gap-2 border list-none',
+                    p.connected
+                      ? 'bg-zinc-900 border-zinc-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+                      : 'bg-zinc-900/40 border-zinc-800/50 opacity-55',
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ background: p.color, boxShadow: `0 0 0 2px ${p.color}33` }}
+                  />
+                  <span className="truncate flex-1 min-w-0">{p.nickname}</span>
+                  {isMe && (
+                    <span className="text-[10px] font-bold text-amber-200 bg-amber-200/10 px-1.5 py-0.5 rounded">
+                      나
+                    </span>
+                  )}
+                  {showRemove && (
+                    <button
+                      type="button"
+                      onClick={() => removeManual(p.playerToken)}
+                      aria-label={ko.lobby.removeManualAria(p.nickname)}
+                      className="-mr-1 w-7 h-7 rounded-full text-zinc-400 hover:text-rose-300 active:text-rose-400 active:scale-95 flex items-center justify-center text-base leading-none"
+                    >
+                      ×
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+
+            {/* dashed inline "+ 직접 추가" — host-only */}
+            {canManageRoster && !showManual && (
+              <li className="list-none">
+                <button
+                  type="button"
+                  onClick={() => setShowManual(true)}
+                  className="w-full rounded-xl px-3 py-2.5 text-[13px] text-zinc-400 border border-dashed border-zinc-700 flex items-center justify-center gap-1.5 hover:text-zinc-200 hover:border-zinc-600 active:scale-[0.98]"
+                >
+                  + {ko.lobby.addManualTitle}
+                </button>
+              </li>
+            )}
+
+            {state.players.length === 0 && !canManageRoster && (
+              <li className="col-span-2 text-zinc-500 text-sm">{ko.lobby.waiting}…</li>
+            )}
+          </ul>
+
+          {/* manual-add input (host) — expanded form */}
+          {canManageRoster && showManual && (
+            <div className="mt-3">
               <div className="flex gap-2">
                 <input
+                  autoFocus
                   inputMode="text"
                   maxLength={10}
                   value={manualValue}
@@ -128,6 +233,11 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
                   className="flex-1 min-w-0 px-3 py-3 rounded-xl bg-zinc-800 border border-zinc-700 text-sm focus:outline-none focus:border-amber-400"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !manualBusy) submitManualAdd();
+                    if (e.key === 'Escape') {
+                      setShowManual(false);
+                      setManualValue('');
+                      setManualError(null);
+                    }
                   }}
                 />
                 <button
@@ -138,89 +248,34 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
                 >
                   {ko.lobby.addManualSubmit}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowManual(false);
+                    setManualValue('');
+                    setManualError(null);
+                  }}
+                  className="px-3 py-3 rounded-xl bg-transparent text-zinc-400 text-sm"
+                  aria-label="취소"
+                >
+                  ×
+                </button>
               </div>
               <p className="mt-1.5 text-[11px] text-zinc-500">{ko.lobby.addManualHint}</p>
               {manualError && <p className="mt-1 text-xs text-rose-400">{manualError}</p>}
             </div>
           )}
-
-          <ul className="grid grid-cols-2 gap-2">
-            {state.players.map((p) => {
-              const showRemove = canManageRoster && p.manual && p.playerToken !== myToken;
-              return (
-                <li
-                  key={p.playerToken}
-                  className={clsx(
-                    'rounded-xl px-3 py-2 text-sm flex items-center gap-2 border',
-                    p.connected ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-900/40 border-zinc-800/50 opacity-60',
-                  )}
-                >
-                  <span
-                    aria-hidden
-                    className="inline-block w-3 h-3 rounded-full shrink-0"
-                    style={{ background: p.color }}
-                  />
-                  <span className="truncate">{p.nickname}</span>
-                  {p.playerToken === myToken && <span className="ml-auto text-[10px] text-amber-400">나</span>}
-                  {showRemove && (
-                    <button
-                      type="button"
-                      onClick={() => removeManual(p.playerToken)}
-                      aria-label={ko.lobby.removeManualAria(p.nickname)}
-                      className="ml-auto -mr-1 w-7 h-7 rounded-full text-zinc-400 hover:text-rose-300 active:text-rose-400 active:scale-95 flex items-center justify-center text-base leading-none"
-                    >
-                      ×
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-            {state.players.length === 0 && (
-              <li className="col-span-2 text-zinc-500 text-sm">{ko.lobby.waiting}…</li>
-            )}
-          </ul>
         </div>
-
-        {/* host controls */}
-        {isHost && (
-          <>
-            <div>
-              <div className="text-xs text-zinc-400 mb-2">{ko.lobby.chooseGame}</div>
-              <GamePicker selected={state.gameId} onSelect={setGameId} />
-            </div>
-
-            <div>
-              <div className="text-xs text-zinc-400 mb-2">{ko.lobby.loserCount}</div>
-              <div className="flex gap-2">
-                {[1, 2, 3].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setLoserCount(n)}
-                    className={clsx(
-                      'flex-1 py-3 rounded-xl font-bold border',
-                      state.loserCount === n
-                        ? 'bg-amber-400 text-zinc-900 border-amber-400'
-                        : 'bg-zinc-800 text-zinc-200 border-zinc-700',
-                    )}
-                  >
-                    {n}명
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
       </section>
 
       {/* sticky bottom CTA (host only) */}
       {isHost && (
-        <div className="fixed bottom-0 left-0 right-0 px-4 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 bg-gradient-to-t from-[#0b0b10] to-transparent">
+        <div className="fixed bottom-0 left-0 right-0 px-4 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 bg-gradient-to-t from-[#0b0b10] via-[#0b0b10]/95 to-transparent">
           <button
             type="button"
             disabled={!canStart}
             onClick={start}
-            className="w-full py-4 rounded-2xl bg-amber-400 text-zinc-900 font-bold text-lg disabled:opacity-50 active:scale-[0.98]"
+            className="w-full py-4 rounded-2xl bg-amber-400 text-zinc-900 font-extrabold text-lg disabled:opacity-50 active:scale-[0.98] shadow-[0_8px_24px_rgba(251,191,36,0.25)]"
           >
             {canStart ? ko.lobby.start : ko.lobby.needMorePlayers}
           </button>
@@ -229,5 +284,13 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
 
       {showInvite && <InviteSheet url={inviteUrl} onClose={() => setShowInvite(false)} />}
     </main>
+  );
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[11px] text-zinc-400 mb-2 font-bold uppercase tracking-[0.05em]">
+      {children}
+    </div>
   );
 }

@@ -14,34 +14,47 @@ export function GamePicker({
   disabled?: boolean;
 }) {
   const ids = Object.keys(GAME_META) as GameId[];
+  const enabledIds = ids.filter((id) => GAME_META[id].enabled);
+  const disabledIds = ids.filter((id) => !GAME_META[id].enabled);
+
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {ids.map((id) => {
+    <div className="space-y-2">
+      {enabledIds.map((id) => {
         const m = GAME_META[id];
         const isSelected = selected === id;
-        const enabled = m.enabled && !disabled;
+        const tappable = !disabled;
         return (
           <button
             key={id}
             type="button"
-            disabled={!enabled}
-            onClick={() => enabled && onSelect(id)}
+            disabled={!tappable}
+            onClick={() => tappable && onSelect(id)}
             className={clsx(
-              'relative rounded-2xl px-3 py-4 text-left transition-all border',
+              'w-full relative rounded-2xl px-3 py-3.5 text-left border-[1.5px] transition-all',
               isSelected
-                ? 'bg-amber-400 text-zinc-900 border-amber-400'
-                : 'bg-zinc-800 text-zinc-200 border-zinc-700',
-              !enabled && 'opacity-40',
+                ? 'border-amber-600 bg-amber-600/10 text-amber-200'
+                : 'border-zinc-700 bg-zinc-800 text-zinc-100',
             )}
           >
-            <div className="text-2xl">{m.emoji}</div>
-            <div className={clsx('font-bold mt-1', isSelected ? '' : 'text-zinc-100')}>{m.label}</div>
-            <div className={clsx('text-[11px] mt-0.5', isSelected ? 'text-zinc-800' : 'text-zinc-400')}>
-              {m.enabled ? `~${m.estimatedSeconds}초` : ko.lobby.comingSoon}
+            <div className="text-2xl leading-none">{m.emoji}</div>
+            <div className={clsx('font-bold mt-1.5 text-[15px]', isSelected && 'text-amber-200')}>
+              {m.label}
+            </div>
+            <div className={clsx('text-[11px] mt-0.5', isSelected ? 'text-amber-200/80' : 'text-zinc-400')}>
+              ~{m.estimatedSeconds}초 · 물리 기반
             </div>
           </button>
         );
       })}
+
+      {disabledIds.length > 0 && (
+        <div className="rounded-xl px-3 py-2.5 border border-dashed border-zinc-700 flex items-center gap-2.5 text-xs text-zinc-500">
+          <span className="text-sm whitespace-nowrap">
+            {disabledIds.map((id) => GAME_META[id].emoji).join(' ')}
+          </span>
+          <span>{ko.lobby.moreGamesComingSoon}</span>
+        </div>
+      )}
     </div>
   );
 }

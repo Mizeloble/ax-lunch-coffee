@@ -134,7 +134,7 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
 
     // Two panes: main (my marble) and inset (꼴등 후보). Both share the same draw routine.
     const mainPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '', particles: [], bursts: [], pulse: 0, shake: 0, alpha: 1 };
-    const insetPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '꼴등 시점', particles: [], bursts: [], pulse: 0, shake: 0, alpha: 0 };
+    const insetPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '☕ 꼴찌 시점', particles: [], bursts: [], pulse: 0, shake: 0, alpha: 0 };
 
     // Cumulative playback time at the START of each frame (cumMs[i] = sum of frameDurations[0..i-1]).
     // Used to map wall-clock elapsed → frameF via binary search.
@@ -274,10 +274,10 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
 
       // --- Draw main pane (with screen shake) ---
       mainPane.label = iAmFinished
-        ? '내 공 도착 ✓ · 꼴등 시점'
+        ? '✓ 도착 · ☕ 꼴찌 시점'
         : iAmLoserCandidate
-          ? '내 공 (위험! 꼴등 후보)'
-          : '내 공 시점';
+          ? '⚠️ 위험! 꼴찌 후보'
+          : '👁 내 시점';
       const mainShakeX = mainPane.shake > 0 ? (Math.random() - 0.5) * mainPane.shake * 8 * dpr : 0;
       const mainShakeY = mainPane.shake > 0 ? (Math.random() - 0.5) * mainPane.shake * 8 * dpr : 0;
       ctx.save();

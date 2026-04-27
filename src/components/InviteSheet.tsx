@@ -43,10 +43,11 @@ export function InviteSheet({ url, onClose }: { url: string; onClose: () => void
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="w-full sm:max-w-sm bg-zinc-900 rounded-t-3xl sm:rounded-3xl p-6 space-y-5">
+      <div className="w-full sm:max-w-sm bg-zinc-900 border-t border-zinc-800 sm:border rounded-t-3xl sm:rounded-3xl px-6 pt-3 pb-[max(env(safe-area-inset-bottom),24px)] sm:pb-6 space-y-4 shadow-[0_-8px_32px_rgba(0,0,0,0.4)]">
+        <div className="w-9 h-1 rounded-full bg-white/20 mx-auto" aria-hidden />
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold">{ko.lobby.invite}</h2>
-          <button type="button" onClick={onClose} className="text-zinc-400 px-2 py-1">
+          <h2 className="text-xl font-extrabold -tracking-wide">{ko.lobby.invite}</h2>
+          <button type="button" onClick={onClose} className="text-zinc-400 px-2 py-1 text-sm">
             닫기
           </button>
         </div>

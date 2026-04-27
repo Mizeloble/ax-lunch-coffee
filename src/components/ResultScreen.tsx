@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
 import { useRoomStore } from '@/store/room-store';
 import { getSocket } from '@/lib/socket-client';
@@ -12,6 +13,8 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
   const myToken = useRoomStore((s) => s.myToken);
   const isHost = useRoomStore((s) => s.isHost);
   const gameStart = useRoomStore((s) => s.gameStart);
+  const router = useRouter();
+  const [showRanking, setShowRanking] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -95,106 +98,207 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
     .filter((p): p is NonNullable<typeof p> => !!p);
 
   const iLost = !!myToken && result.losers.includes(myToken);
+  const singleLoser = losers.length === 1;
 
-  // Full ranking, in order from 1st → last. Resolve player metadata once.
   const fullRanking = result.ranking
     .map((tk) => state.players.find((p) => p.playerToken === tk))
     .filter((p): p is NonNullable<typeof p> => !!p);
 
   const canReplay = !!gameStart && !!onReplay;
 
+  function leaveRoom() {
+    router.push('/');
+  }
+
   return (
     <main className="fixed inset-0 z-30 bg-[#0b0b10] flex flex-col items-center justify-center px-6 text-center overflow-hidden">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
-      <div className="relative z-10 w-full max-w-xs">
-        <div className="text-sm text-zinc-400">{ko.result.losers(result.losers.length)}</div>
-        <div className="text-6xl mt-2">☕️</div>
+      <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
+        {/* Header chip — ☕ 오늘 커피값 × N명 */}
+        <div className="inline-flex items-center gap-2 pl-3.5 pr-3 py-1.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-xs text-zinc-400 font-semibold whitespace-nowrap">
+          <span className="text-sm">☕️</span>
+          <span>{ko.result.headerChip}</span>
+          <span className="px-2 py-0.5 rounded-full bg-amber-400 text-zinc-900 font-extrabold text-[11px]">
+            {ko.result.countBadge(losers.length)}
+          </span>
+        </div>
 
-        <ul className="mt-6 space-y-2">
-          {losers.map((p) => (
-            <li
-              key={p.playerToken}
-              className="rounded-2xl px-4 py-3 flex items-center gap-3 shadow-lg"
-              style={{ background: p.color }}
+        {/* Names — 80px Display for single, 48px stack for multiple */}
+        {singleLoser ? (
+          <>
+            <div
+              className="mt-9 font-black text-zinc-50 leading-none"
+              style={{
+                fontSize: 80,
+                letterSpacing: '-0.05em',
+                textShadow: `0 4px 60px ${losers[0].color}50`,
+              }}
             >
-              <span className="text-2xl">🫣</span>
-              <span className="font-bold text-zinc-900 text-lg">{p.nickname}</span>
-            </li>
-          ))}
-        </ul>
+              {losers[0].nickname}
+            </div>
+            <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.05] border border-white/[0.08]">
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ background: losers[0].color, boxShadow: `0 0 0 3px ${losers[0].color}30` }}
+              />
+              <span className="text-xs text-zinc-400 font-semibold">{ko.result.loserBadge}</span>
+            </div>
+          </>
+        ) : (
+          <div className="mt-8 flex flex-col gap-1.5">
+            {losers.map((p) => (
+              <div
+                key={p.playerToken}
+                className="font-black text-zinc-50 flex items-center justify-center gap-3.5"
+                style={{ fontSize: 48, letterSpacing: '-0.04em', lineHeight: 1.05 }}
+              >
+                <span
+                  className="w-3 h-3 rounded-full shrink-0"
+                  style={{ background: p.color, boxShadow: `0 0 0 4px ${p.color}30` }}
+                />
+                {p.nickname}
+              </div>
+            ))}
+          </div>
+        )}
 
-        <div className={clsx('mt-6 text-base font-bold', iLost ? 'text-rose-300' : 'text-emerald-300')}>
+        <div
+          className={clsx(
+            'mt-8 text-base font-extrabold -tracking-wide',
+            iLost ? 'text-rose-300' : 'text-emerald-300',
+          )}
+          style={{ fontSize: 17 }}
+        >
           {iLost ? ko.result.youLost : ko.result.youWon}
         </div>
 
-        {fullRanking.length > 0 && (
-          <details className="mt-6 rounded-xl bg-zinc-900/70 px-4 py-3 text-left">
-            <summary className="text-xs font-medium text-zinc-400 cursor-pointer select-none list-none flex items-center justify-between">
-              <span>{ko.result.fullRanking}</span>
-              <span className="text-zinc-600">▾</span>
-            </summary>
-            <ul className="mt-3 space-y-1.5">
-              {fullRanking.map((p, i) => {
-                const rank = i + 1;
-                const isMe = p.playerToken === myToken;
-                return (
-                  <li
-                    key={p.playerToken}
-                    className={clsx(
-                      'flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm',
-                      isMe && 'bg-amber-400/15',
-                    )}
-                  >
-                    <span className="w-7 text-right text-xs font-bold text-zinc-500 tabular-nums">
-                      {ko.result.rank(rank)}
-                    </span>
-                    <span
-                      className="h-3 w-3 rounded-full shrink-0"
-                      style={{ background: p.color }}
-                      aria-hidden
-                    />
-                    <span className={clsx('truncate', isMe ? 'text-amber-300 font-bold' : 'text-zinc-200')}>
-                      {p.nickname}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </details>
-        )}
-
-        <div className="mt-8 space-y-2">
-          {canReplay && (
+        {/* Bottom actions — host primary grid vs guest secondary row */}
+        {isHost ? (
+          <div className="mt-10 w-full flex flex-col gap-2">
             <button
               type="button"
-              onClick={onReplay}
-              className="w-full py-3 rounded-xl bg-zinc-800 text-zinc-200 font-medium active:scale-[0.98]"
+              onClick={() => getSocket().emit('start')}
+              className="w-full py-4 rounded-2xl bg-amber-400 text-zinc-900 font-extrabold text-lg active:scale-[0.98] shadow-[0_8px_24px_rgba(251,191,36,0.25)]"
             >
-              {ko.result.replay}
+              {ko.result.again}
             </button>
-          )}
-          {isHost && (
-            <>
-              <button
-                type="button"
-                onClick={() => getSocket().emit('start')}
-                className="w-full py-4 rounded-2xl bg-amber-400 text-zinc-900 font-bold text-lg active:scale-[0.98]"
-              >
-                {ko.result.again}
-              </button>
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => getSocket().emit('reset')}
-                className="w-full py-3 rounded-xl bg-zinc-800 text-zinc-200 font-medium active:scale-[0.98]"
+                className="py-3.5 rounded-xl bg-transparent text-zinc-400 border-[1.5px] border-zinc-800 font-semibold text-sm active:scale-[0.98]"
               >
                 {ko.result.changeGame}
               </button>
-            </>
-          )}
-        </div>
-        {!isHost && <p className="text-xs text-zinc-500 mt-8">호스트가 다음 라운드를 시작할 거예요</p>}
+              <button
+                type="button"
+                onClick={leaveRoom}
+                className="py-3.5 rounded-xl bg-transparent text-zinc-400 border-[1.5px] border-zinc-800 font-semibold text-sm active:scale-[0.98]"
+              >
+                {ko.result.closeRoom}
+              </button>
+            </div>
+            {canReplay && (
+              <button
+                type="button"
+                onClick={onReplay}
+                className="mt-1 w-full py-2.5 text-zinc-500 text-xs underline-offset-2 hover:underline"
+              >
+                {ko.result.replay}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="mt-12 w-full flex flex-col items-center gap-3">
+            <div className="inline-flex items-center gap-2 text-xs text-zinc-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <span>{ko.result.waitingNext}</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowRanking((s) => !s)}
+                className="px-4 py-2.5 rounded-xl bg-transparent text-zinc-400 border border-zinc-800 text-[13px] font-semibold active:scale-[0.98]"
+              >
+                {showRanking ? ko.result.fullRankingHide : ko.result.fullRankingShow}
+              </button>
+              <button
+                type="button"
+                onClick={leaveRoom}
+                className="px-4 py-2.5 rounded-xl bg-transparent text-zinc-400 border border-zinc-800 text-[13px] font-semibold active:scale-[0.98]"
+              >
+                {ko.result.leaveRoom}
+              </button>
+            </div>
+            {canReplay && (
+              <button
+                type="button"
+                onClick={onReplay}
+                className="mt-1 text-zinc-500 text-xs underline-offset-2 hover:underline"
+              >
+                {ko.result.replay}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Inline ranking (guest disclosure) */}
+        {!isHost && showRanking && fullRanking.length > 0 && (
+          <RankingList ranking={fullRanking} myToken={myToken} />
+        )}
       </div>
+
+      {/* Host: ranking shown as compact disclosure below action grid (kept from v1, polished) */}
+      {isHost && fullRanking.length > 0 && (
+        <details className="relative z-10 mt-6 w-full max-w-sm rounded-xl bg-zinc-900/70 border border-zinc-800 px-4 py-3 text-left group">
+          <summary className="text-xs font-semibold text-zinc-400 cursor-pointer select-none list-none flex items-center justify-between">
+            <span>{ko.result.fullRanking}</span>
+            <span className="text-zinc-600 transition-transform group-open:rotate-180">▾</span>
+          </summary>
+          <div className="border-t border-zinc-800 mt-3 pt-3">
+            <RankingList ranking={fullRanking} myToken={myToken} />
+          </div>
+        </details>
+      )}
     </main>
+  );
+}
+
+function RankingList({
+  ranking,
+  myToken,
+}: {
+  ranking: { playerToken: string; nickname: string; color: string }[];
+  myToken: string | null;
+}) {
+  return (
+    <ul className="mt-3 w-full max-w-sm space-y-1.5">
+      {ranking.map((p, i) => {
+        const rank = i + 1;
+        const isMe = p.playerToken === myToken;
+        return (
+          <li
+            key={p.playerToken}
+            className={clsx(
+              'flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm',
+              isMe && 'bg-amber-400/15',
+            )}
+          >
+            <span className="w-7 text-right text-xs font-bold text-zinc-500 tabular-nums">
+              {ko.result.rank(rank)}
+            </span>
+            <span
+              className="h-3 w-3 rounded-full shrink-0"
+              style={{ background: p.color }}
+              aria-hidden
+            />
+            <span className={clsx('truncate', isMe ? 'text-amber-300 font-bold' : 'text-zinc-200')}>
+              {p.nickname}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
