@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
 import { getSocket, disposeSocket } from '@/lib/socket-client';
@@ -42,6 +42,10 @@ export default function RoomClient({
   const [joinError, setJoinError] = useState<string | null>(null);
   const [busyJoin, setBusyJoin] = useState(false);
   const [identityNickname, setIdentityNickname] = useState<string>('');
+  // Tracks whether at least one explicit join has succeeded. Used to gate the
+  // silent re-join on `connect` so the very first connect (the mount-time
+  // attemptJoin handles it) doesn't double-emit.
+  const joinedOnceRef = useRef(false);
   // Gate the transition from race → result screen behind a tap, so the loser
   // banner / rank card animations have time to land.
   const [resultAcked, setResultAcked] = useState(false);
@@ -108,10 +112,39 @@ export default function RoomClient({
           }
           setMe(res.playerToken, res.isHost);
           saveIdentity(nickname, res.playerToken);
+          joinedOnceRef.current = true;
           setPhase('in-room');
         },
       );
     }
+
+    // After a transient disconnect (mobile backgrounding, network blip, server ping
+    // timeout), Socket.IO reconnects with a NEW socket id. The previous player record
+    // is held for RECONNECT_GRACE_MS, but the new socket sits outside the room — every
+    // subsequent `state` broadcast is missed until the user manually refreshes. Re-emit
+    // `join` silently with the stored identity so the new socket re-binds to the same
+    // playerToken. `addPlayer` is idempotent for existing tokens.
+    function rejoinSilently() {
+      const id = loadIdentity();
+      if (!id?.nickname || !id.playerToken) return;
+      const ht = readHostToken(roomId);
+      socket.emit(
+        'join',
+        { roomId, nickname: id.nickname, playerToken: id.playerToken, hostToken: ht },
+        (res: JoinAck) => {
+          if (res.ok) {
+            setMe(res.playerToken, res.isHost);
+          } else if (res.code === 'NO_ROOM') {
+            setErrMsg(ko.errors.roomNotFound);
+            setPhase('error');
+          }
+        },
+      );
+    }
+    function onConnect() {
+      if (joinedOnceRef.current) rejoinSilently();
+    }
+    socket.on('connect', onConnect);
 
     if (fresh) {
       // Force a brand-new identity (testing with shared-localStorage incognito windows, or
@@ -135,6 +168,7 @@ export default function RoomClient({
       socket.off('game:start', onGameStart);
       socket.off('game:result', onResult);
       socket.off('error', onErr);
+      socket.off('connect', onConnect);
       delete (window as unknown as { __attemptJoin?: unknown }).__attemptJoin;
     };
   }, [roomId, forceJoin, fresh, setMe, setState, setGameStart, setResult]);
