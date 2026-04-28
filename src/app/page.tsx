@@ -21,7 +21,7 @@ export default function LandingPage() {
       router.push(`/r/${roomId}`);
     } catch {
       setBusy(false);
-      alert('방 생성에 실패했어요. 다시 시도해주세요.');
+      alert(ko.landing.createFailed);
     }
   }
 
@@ -41,7 +41,7 @@ export default function LandingPage() {
             disabled={busy}
             className="w-full py-4 rounded-2xl bg-amber-400 text-zinc-900 font-bold text-lg disabled:opacity-50 active:scale-[0.98] transition-transform"
           >
-            {busy ? '생성 중…' : ko.landing.createRoom}
+            {busy ? ko.landing.creating : ko.landing.createRoom}
           </button>
         </div>
       </div>

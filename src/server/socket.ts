@@ -6,77 +6,33 @@ import {
   isHostToken,
   publicRoomState,
   touch,
-  type GameId,
   type RoomState,
 } from './rooms';
 import { runGame } from './game-runner';
+import { ko } from '../lib/i18n';
+import { GAME, NICKNAME, ROOM } from '../lib/constants';
+import type { ClientToServerEvents, ServerToClientEvents } from '../lib/protocol';
 
-const COUNTDOWN_MS = 3000;
-const MIN_PLAYERS = 2;
-const MAX_PLAYERS = 30;
-const NICKNAME_MAX = 10;
-const RECONNECT_GRACE_MS = 10_000;
+type IO = IOServer<ClientToServerEvents, ServerToClientEvents>;
 
-type ServerToClientEvents = {
-  state: (state: ReturnType<typeof publicRoomState>) => void;
-  joined: (payload: { you: { playerToken: string; isHost: boolean } }) => void;
-  error: (payload: { code: string; message: string }) => void;
-  countdown: (payload: { startAt: number }) => void;
-  'game:start': (payload: {
-    gameId: GameId;
-    seed: number;
-    startAt: number;
-    durationMs: number;
-    replay: unknown;
-    players: { playerToken: string; nickname: string; color: string }[];
-  }) => void;
-  'game:result': (payload: { ranking: string[]; losers: string[] }) => void;
-};
-
-type ClientToServerEvents = {
-  join: (
-    payload: { roomId: string; nickname: string; playerToken?: string; hostToken?: string },
-    ack: (res: { ok: true; playerToken: string; isHost: boolean } | { ok: false; code: string; message: string }) => void,
-  ) => void;
-  setLoserCount: (payload: { count: number }) => void;
-  setGameId: (payload: { gameId: GameId }) => void;
-  start: () => void;
-  reset: () => void;
-  'host:addPlayer': (
-    payload: { nickname: string },
-    ack: (res: { ok: true; playerToken: string } | { ok: false; code: string; message: string }) => void,
-  ) => void;
-  'host:removePlayer': (
-    payload: { playerToken: string },
-    ack?: (res: { ok: true } | { ok: false; code: string; message: string }) => void,
-  ) => void;
-};
-
-export function attachSocketHandlers(io: IOServer<ClientToServerEvents, ServerToClientEvents>) {
+export function attachSocketHandlers(io: IO) {
   io.on('connection', (socket) => {
     let currentRoomId: string | null = null;
 
     socket.on('join', (payload, ack) => {
       const room = getRoom(payload.roomId);
-      if (!room) return ack({ ok: false, code: 'NO_ROOM', message: '방을 찾을 수 없어요' });
-      if (room.players.size >= MAX_PLAYERS && !payload.playerToken) {
-        return ack({ ok: false, code: 'FULL', message: '방이 꽉 찼어요' });
+      if (!room) return ack(err('NO_ROOM', ko.errors.roomNotFound));
+      if (room.players.size >= GAME.MAX_PLAYERS && !payload.playerToken) {
+        return ack(err('FULL', ko.errors.full));
       }
       if (room.status !== 'lobby' && room.status !== 'result' && !payload.playerToken) {
-        return ack({ ok: false, code: 'IN_PROGRESS', message: '이미 진행 중이에요' });
+        return ack(err('IN_PROGRESS', ko.errors.inProgress));
       }
-      const nickname = sanitizeNickname(payload.nickname);
-      if (!nickname) return ack({ ok: false, code: 'BAD_NICK', message: '닉네임을 확인해주세요' });
-
-      // Duplicate nickname check (excluding the rejoining same token)
-      for (const p of room.players.values()) {
-        if (p.nickname === nickname && p.playerToken !== payload.playerToken) {
-          return ack({ ok: false, code: 'DUP_NICK', message: '같은 닉네임이 이미 있어요' });
-        }
-      }
+      const nickCheck = validateNickname(room, payload.nickname, payload.playerToken);
+      if (!nickCheck.ok) return ack(nickCheck);
 
       const player = addPlayer(room, {
-        nickname,
+        nickname: nickCheck.nickname,
         playerToken: payload.playerToken,
         socketId: socket.id,
       });
@@ -91,50 +47,35 @@ export function attachSocketHandlers(io: IOServer<ClientToServerEvents, ServerTo
     });
 
     socket.on('host:addPlayer', (payload, ack) => {
-      const room = currentRoomId ? getRoom(currentRoomId) : null;
-      if (!room) return ack({ ok: false, code: 'NO_ROOM', message: '방을 찾을 수 없어요' });
-      if (!isCurrentSocketHost(room, socket)) return ack({ ok: false, code: 'NOT_HOST', message: '호스트만 가능해요' });
+      const guard = requireHost(currentRoomId, socket);
+      if (!guard.ok) return ack(guard);
+      const { room } = guard;
+
       if (room.status !== 'lobby' && room.status !== 'result') {
-        return ack({ ok: false, code: 'BAD_STATE', message: '게임 진행 중에는 추가할 수 없어요' });
+        return ack(err('BAD_STATE', ko.errors.badStateAdd));
       }
-      if (room.players.size >= MAX_PLAYERS) {
-        return ack({ ok: false, code: 'FULL', message: '방이 꽉 찼어요' });
-      }
-      const nickname = sanitizeNickname(payload.nickname);
-      if (!nickname) return ack({ ok: false, code: 'BAD_NICK', message: '닉네임을 확인해주세요' });
-      for (const p of room.players.values()) {
-        if (p.nickname === nickname) {
-          return ack({ ok: false, code: 'DUP_NICK', message: '같은 닉네임이 이미 있어요' });
-        }
-      }
-      const player = addPlayer(room, { nickname, socketId: null, manual: true });
+      if (room.players.size >= GAME.MAX_PLAYERS) return ack(err('FULL', ko.errors.full));
+
+      const nickCheck = validateNickname(room, payload.nickname);
+      if (!nickCheck.ok) return ack(nickCheck);
+
+      const player = addPlayer(room, { nickname: nickCheck.nickname, socketId: null, manual: true });
       io.to(room.id).emit('state', publicRoomState(room));
       ack({ ok: true, playerToken: player.playerToken });
     });
 
     socket.on('host:removePlayer', ({ playerToken }, ack) => {
-      const room = currentRoomId ? getRoom(currentRoomId) : null;
-      if (!room) {
-        ack?.({ ok: false, code: 'NO_ROOM', message: '방을 찾을 수 없어요' });
-        return;
-      }
-      if (!isCurrentSocketHost(room, socket)) {
-        ack?.({ ok: false, code: 'NOT_HOST', message: '호스트만 가능해요' });
-        return;
-      }
+      const guard = requireHost(currentRoomId, socket);
+      if (!guard.ok) return ack?.(guard);
+      const { room } = guard;
+
       if (room.status !== 'lobby' && room.status !== 'result') {
-        ack?.({ ok: false, code: 'BAD_STATE', message: '게임 진행 중에는 변경할 수 없어요' });
-        return;
+        return ack?.(err('BAD_STATE', ko.errors.badStateChange));
       }
       const target = room.players.get(playerToken);
-      if (!target) {
-        ack?.({ ok: false, code: 'NO_PLAYER', message: '참가자를 찾을 수 없어요' });
-        return;
-      }
-      if (!target.manual) {
-        ack?.({ ok: false, code: 'NOT_MANUAL', message: '직접 추가한 참가자만 제거할 수 있어요' });
-        return;
-      }
+      if (!target) return ack?.(err('NO_PLAYER', ko.errors.noPlayer));
+      if (!target.manual) return ack?.(err('NOT_MANUAL', ko.errors.notManual));
+
       if (target.graceTimer) clearTimeout(target.graceTimer);
       room.players.delete(playerToken);
       touch(room);
@@ -143,33 +84,32 @@ export function attachSocketHandlers(io: IOServer<ClientToServerEvents, ServerTo
     });
 
     socket.on('setLoserCount', ({ count }) => {
-      const room = currentRoomId ? getRoom(currentRoomId) : null;
-      if (!room) return;
-      if (!isCurrentSocketHost(room, socket)) return;
-      const c = clamp(Math.floor(count), 1, 3);
-      room.loserCount = c;
+      const guard = requireHost(currentRoomId, socket);
+      if (!guard.ok) return;
+      const { room } = guard;
+      room.loserCount = clamp(Math.floor(count), GAME.LOSER_COUNT_MIN, GAME.LOSER_COUNT_MAX);
       touch(room);
       io.to(room.id).emit('state', publicRoomState(room));
     });
 
     socket.on('setGameId', ({ gameId }) => {
-      const room = currentRoomId ? getRoom(currentRoomId) : null;
-      if (!room) return;
-      if (!isCurrentSocketHost(room, socket)) return;
+      const guard = requireHost(currentRoomId, socket);
+      if (!guard.ok) return;
+      const { room } = guard;
       room.gameId = gameId;
       touch(room);
       io.to(room.id).emit('state', publicRoomState(room));
     });
 
     socket.on('start', async () => {
-      const room = currentRoomId ? getRoom(currentRoomId) : null;
-      if (!room) return;
-      if (!isCurrentSocketHost(room, socket)) return;
-      const connectedCount = [...room.players.values()].filter((p) => p.connected).length;
-      if (connectedCount < MIN_PLAYERS) return;
+      const guard = requireHost(currentRoomId, socket);
+      if (!guard.ok) return;
+      const { room } = guard;
+
+      const connectedPlayers = [...room.players.values()].filter((p) => p.connected);
+      if (connectedPlayers.length < GAME.MIN_PLAYERS) return;
       if (room.status === 'countdown' || room.status === 'playing') return;
 
-      const players = [...room.players.values()].filter((p) => p.connected);
       const seed = (Math.random() * 0x7fffffff) | 0;
       // Mark as countdown immediately so a second click is ignored even while WASM loads
       room.status = 'countdown';
@@ -177,7 +117,7 @@ export function attachSocketHandlers(io: IOServer<ClientToServerEvents, ServerTo
 
       let replay;
       try {
-        replay = await runGame({ gameId: room.gameId, seed, players, loserCount: room.loserCount });
+        replay = await runGame({ gameId: room.gameId, seed, players: connectedPlayers, loserCount: room.loserCount });
       } catch (err) {
         console.error('runGame failed', err);
         room.status = 'lobby';
@@ -185,7 +125,7 @@ export function attachSocketHandlers(io: IOServer<ClientToServerEvents, ServerTo
         return;
       }
 
-      const startAt = Date.now() + COUNTDOWN_MS;
+      const startAt = Date.now() + GAME.COUNTDOWN_MS;
       room.currentRound = { gameId: room.gameId, seed, startAt, replay };
       touch(room);
       io.to(room.id).emit('state', publicRoomState(room));
@@ -196,7 +136,7 @@ export function attachSocketHandlers(io: IOServer<ClientToServerEvents, ServerTo
         startAt,
         durationMs: replay.durationMs,
         replay: replay.data,
-        players: players.map((p) => ({ playerToken: p.playerToken, nickname: p.nickname, color: p.color })),
+        players: connectedPlayers.map((p) => ({ playerToken: p.playerToken, nickname: p.nickname, color: p.color })),
       });
 
       // Move to playing at startAt; result emit is fire-and-forget after duration
@@ -204,20 +144,20 @@ export function attachSocketHandlers(io: IOServer<ClientToServerEvents, ServerTo
         if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
         room.status = 'playing';
         io.to(room.id).emit('state', publicRoomState(room));
-      }, COUNTDOWN_MS);
+      }, GAME.COUNTDOWN_MS);
 
       setTimeout(() => {
         if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
         room.status = 'result';
         io.to(room.id).emit('state', publicRoomState(room));
         io.to(room.id).emit('game:result', { ranking: replay.ranking, losers: replay.losers });
-      }, COUNTDOWN_MS + replay.durationMs);
+      }, GAME.COUNTDOWN_MS + replay.durationMs);
     });
 
     socket.on('reset', () => {
-      const room = currentRoomId ? getRoom(currentRoomId) : null;
-      if (!room) return;
-      if (!isCurrentSocketHost(room, socket)) return;
+      const guard = requireHost(currentRoomId, socket);
+      if (!guard.ok) return;
+      const { room } = guard;
       room.status = 'lobby';
       room.currentRound = undefined;
       touch(room);
@@ -241,13 +181,50 @@ export function attachSocketHandlers(io: IOServer<ClientToServerEvents, ServerTo
           touch(room);
           io.to(room.id).emit('state', publicRoomState(room));
         }
-      }, RECONNECT_GRACE_MS);
+      }, ROOM.RECONNECT_GRACE_MS);
     });
   });
 }
 
-function isCurrentSocketHost(room: RoomState, socket: Socket) {
-  return room.hostSocketId === socket.id;
+// --- helpers ---------------------------------------------------------------
+
+type Failure = { ok: false; code: string; message: string };
+
+function err(code: string, message: string): Failure {
+  return { ok: false, code, message };
+}
+
+/**
+ * Resolve `currentRoomId` and verify the socket holds host rights.
+ * Returns either `{ ok: true, room }` or a ready-to-ack failure payload.
+ */
+function requireHost(
+  currentRoomId: string | null,
+  socket: Socket,
+): { ok: true; room: RoomState } | Failure {
+  const room = currentRoomId ? getRoom(currentRoomId) : null;
+  if (!room) return err('NO_ROOM', ko.errors.roomNotFound);
+  if (room.hostSocketId !== socket.id) return err('NOT_HOST', ko.errors.notHost);
+  return { ok: true, room };
+}
+
+/**
+ * Sanitize and validate a nickname against length and per-room duplicate rules.
+ * `excludeToken` lets a rejoining player keep their own nickname.
+ */
+function validateNickname(
+  room: RoomState,
+  raw: unknown,
+  excludeToken?: string,
+): { ok: true; nickname: string } | Failure {
+  const nickname = sanitizeNickname(raw);
+  if (!nickname) return err('BAD_NICK', ko.errors.badNick);
+  for (const p of room.players.values()) {
+    if (p.nickname === nickname && p.playerToken !== excludeToken) {
+      return err('DUP_NICK', ko.errors.duplicateNick);
+    }
+  }
+  return { ok: true, nickname };
 }
 
 function clamp(n: number, min: number, max: number) {
@@ -257,6 +234,6 @@ function clamp(n: number, min: number, max: number) {
 function sanitizeNickname(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const t = raw.trim();
-  if (t.length < 1 || t.length > NICKNAME_MAX) return null;
+  if (t.length < 1 || t.length > NICKNAME.MAX_LENGTH) return null;
   return t;
 }

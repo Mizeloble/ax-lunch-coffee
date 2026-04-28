@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
 import { getSocket, disposeSocket } from '@/lib/socket-client';
@@ -12,12 +12,8 @@ import { Countdown } from '@/components/Countdown';
 import { ResultScreen } from '@/components/ResultScreen';
 import { MarbleRenderer } from '@/games/marble/Renderer';
 import type { SimulationResult } from '@/games/marble/sim';
-
-// Auto-redirect to landing after the room sits in 'result' for this long, so a
-// forgotten tab (whether on the result screen, the post-replay prompt, or the
-// game screen waiting for ack) doesn't keep the WebSocket alive — and the Fly
-// machine awake — all day.
-const IDLE_REDIRECT_MS = 3 * 60_000;
+import { ROOM, UI } from '@/lib/constants';
+import type { JoinAck } from '@/lib/protocol';
 
 export default function RoomClient({
   roomId,
@@ -59,33 +55,10 @@ export default function RoomClient({
     return `${window.location.origin}/r/${roomId}?join=1`;
   }, [roomId]);
 
-  // Initial wiring: connect socket, listen, attempt join
-  useEffect(() => {
-    const socket = getSocket();
-
-    const onState = (s: PublicRoomState) => setState(s);
-    const onGameStart = (g: GameStartPayload) => setGameStart(g);
-    const onResult = (r: ResultPayload) => setResult(r);
-    const onErr = ({ message }: { code: string; message: string }) => {
-      setErrMsg(message);
-      setPhase('error');
-    };
-
-    socket.on('state', onState);
-    socket.on('game:start', onGameStart);
-    socket.on('game:result', onResult);
-    socket.on('error', onErr);
-
-    const identity = loadIdentity();
-    setIdentityNickname(identity?.nickname ?? '');
-
-    const hostToken = readHostToken(roomId);
-
-    type JoinAck =
-      | { ok: true; playerToken: string; isHost: boolean }
-      | { ok: false; code: string; message: string };
-
-    function attemptJoin(nickname: string, playerToken?: string) {
+  const attemptJoin = useCallback(
+    (nickname: string, playerToken?: string) => {
+      const socket = getSocket();
+      const hostToken = readHostToken(roomId);
       setBusyJoin(true);
       setJoinError(null);
       socket.emit(
@@ -95,7 +68,6 @@ export default function RoomClient({
           setBusyJoin(false);
           if (!res.ok) {
             setJoinError(res.message);
-            // If duplicate or bad nickname, force the modal
             if (res.code === 'DUP_NICK' || res.code === 'BAD_NICK') {
               setPhase('need-nickname');
             } else if (res.code === 'NO_ROOM') {
@@ -116,7 +88,29 @@ export default function RoomClient({
           setPhase('in-room');
         },
       );
-    }
+    },
+    [roomId, setMe],
+  );
+
+  // Initial wiring: connect socket, listen, attempt join
+  useEffect(() => {
+    const socket = getSocket();
+
+    const onState = (s: PublicRoomState) => setState(s);
+    const onGameStart = (g: GameStartPayload) => setGameStart(g);
+    const onResult = (r: ResultPayload) => setResult(r);
+    const onErr = ({ message }: { code: string; message: string }) => {
+      setErrMsg(message);
+      setPhase('error');
+    };
+
+    socket.on('state', onState);
+    socket.on('game:start', onGameStart);
+    socket.on('game:result', onResult);
+    socket.on('error', onErr);
+
+    const identity = loadIdentity();
+    setIdentityNickname(identity?.nickname ?? '');
 
     // After a transient disconnect (mobile backgrounding, network blip, server ping
     // timeout), Socket.IO reconnects with a NEW socket id. The previous player record
@@ -151,17 +145,12 @@ export default function RoomClient({
       // a user who explicitly wants a different nickname for this room)
       setIdentityNickname('');
       setPhase('need-nickname');
-    } else if (identity?.nickname && !forceJoin) {
-      attemptJoin(identity.nickname, identity.playerToken);
-    } else if (identity?.nickname && forceJoin) {
-      // QR scan with stored nickname → still auto-join, no modal
+    } else if (identity?.nickname) {
+      // Stored identity → auto-join (whether normal load or QR scan with `forceJoin`).
       attemptJoin(identity.nickname, identity.playerToken);
     } else {
       setPhase('need-nickname');
     }
-
-    // expose for the modal callback
-    (window as unknown as { __attemptJoin?: typeof attemptJoin }).__attemptJoin = attemptJoin;
 
     return () => {
       socket.off('state', onState);
@@ -169,14 +158,8 @@ export default function RoomClient({
       socket.off('game:result', onResult);
       socket.off('error', onErr);
       socket.off('connect', onConnect);
-      delete (window as unknown as { __attemptJoin?: unknown }).__attemptJoin;
     };
-  }, [roomId, forceJoin, fresh, setMe, setState, setGameStart, setResult]);
-
-  function submitNickname(nickname: string) {
-    const fn = (window as unknown as { __attemptJoin?: (n: string, p?: string) => void }).__attemptJoin;
-    if (fn) fn(nickname);
-  }
+  }, [roomId, forceJoin, fresh, attemptJoin, setMe, setState, setGameStart, setResult]);
 
   // Reset the tap-gate whenever a new game begins. Must run before any early
   // return so hook order stays stable across renders.
@@ -196,7 +179,7 @@ export default function RoomClient({
     const t = setTimeout(() => {
       disposeSocket();
       router.push('/');
-    }, IDLE_REDIRECT_MS);
+    }, ROOM.IDLE_REDIRECT_MS);
     return () => clearTimeout(t);
   }, [status, router]);
 
@@ -204,9 +187,9 @@ export default function RoomClient({
     return (
       <main className="min-h-dvh flex flex-col items-center justify-center px-6 text-center">
         <div className="text-3xl mb-3">😵</div>
-        <h1 className="text-lg font-bold">{errMsg ?? '문제가 생겼어요'}</h1>
+        <h1 className="text-lg font-bold">{errMsg ?? ko.errors.generic}</h1>
         <a href="/" className="mt-6 text-sm text-amber-400 underline-offset-2 hover:underline">
-          처음으로
+          {ko.errors.backToHome}
         </a>
       </main>
     );
@@ -215,7 +198,7 @@ export default function RoomClient({
   if (phase === 'connecting' && !state) {
     return (
       <main className="min-h-dvh flex items-center justify-center text-zinc-400">
-        연결 중…
+        {ko.errors.connecting}
       </main>
     );
   }
@@ -233,7 +216,7 @@ export default function RoomClient({
   const showResultPrompt = inResult && replayPlayed && !resultAcked;
 
   function handleReplay() {
-    setReplayStartAt(Date.now() + 1500);
+    setReplayStartAt(Date.now() + UI.REPLAY_LEAD_MS);
     setResultAcked(false);
   }
 
@@ -275,7 +258,7 @@ export default function RoomClient({
           defaultNickname={identityNickname}
           errorMessage={joinError}
           busy={busyJoin}
-          onSubmit={submitNickname}
+          onSubmit={(nickname) => attemptJoin(nickname)}
         />
       )}
     </>

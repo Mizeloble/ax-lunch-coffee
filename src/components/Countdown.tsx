@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ko } from '@/lib/i18n';
 import { haptics } from '@/games/marble/haptics';
+import { UI } from '@/lib/constants';
 
-const FLASH_MS = 700; // how long "시작!" lingers before auto-hiding
-const SPRING_MS = 220; // halo + scale spring at the start of each whole-second tick
+const { FLASH_MS, SPRING_MS } = UI;
 
 export function Countdown({ startAt }: { startAt: number }) {
   const [now, setNow] = useState(() => Date.now());

@@ -42,7 +42,7 @@ export function JoinModal({
           onClick={() => onSubmit(trimmed)}
           className="w-full py-3 rounded-xl bg-amber-400 text-zinc-900 font-bold disabled:opacity-50 active:scale-[0.98]"
         >
-          {busy ? '입장 중…' : ko.join.submit}
+          {busy ? ko.join.submitting : ko.join.submit}
         </button>
       </div>
     </div>
