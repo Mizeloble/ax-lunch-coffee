@@ -75,7 +75,7 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
         <div className="min-w-0 flex-1">
           <div className="font-bold text-base truncate -tracking-wide">{ko.app.title}</div>
           <div className="text-zinc-500 text-[11px] mt-0.5">
-            방 {state.id}{isHost ? ' · 호스트' : ''}
+            {ko.lobby.roomBadge(state.id, isHost)}
           </div>
         </div>
         <button
@@ -134,7 +134,7 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
                           : 'border-zinc-700 bg-zinc-900 text-zinc-100',
                       )}
                     >
-                      {n}명
+                      {ko.lobby.loserCountUnit(n)}
                     </button>
                   );
                 })}
@@ -150,7 +150,7 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
         {/* participants */}
         <div>
           <div className="text-[11px] text-zinc-400 mb-2 font-bold uppercase tracking-[0.05em] flex justify-between items-center">
-            <span>참가자 {connectedCount}명</span>
+            <span>{ko.lobby.rosterCount(connectedCount)}</span>
             {someOffline && (
               <span className="text-zinc-600 normal-case tracking-normal font-normal">
                 {ko.lobby.rosterSomeOffline}
@@ -180,7 +180,7 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
                   <span className="truncate flex-1 min-w-0">{p.nickname}</span>
                   {isMe && (
                     <span className="text-[10px] font-bold text-amber-200 bg-amber-200/10 px-1.5 py-0.5 rounded">
-                      나
+                      {ko.lobby.meBadge}
                     </span>
                   )}
                   {showRemove && (
@@ -256,7 +256,7 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
                     setManualError(null);
                   }}
                   className="px-3 py-3 rounded-xl bg-transparent text-zinc-400 text-sm"
-                  aria-label="취소"
+                  aria-label={ko.lobby.cancel}
                 >
                   ×
                 </button>

@@ -1,7 +1,10 @@
 import { newHostToken, newPlayerToken, newRoomId } from '../lib/ids';
+import { ko } from '../lib/i18n';
+import { MARBLE_COLORS, ROOM } from '../lib/constants';
+import type { RoomStatus } from '../lib/protocol';
+import type { GameId } from '../games/types';
 
-export type GameId = 'marble' | 'slot' | 'elimination' | 'reaction';
-export type RoomStatus = 'lobby' | 'countdown' | 'playing' | 'result';
+export type { GameId, RoomStatus };
 
 export type Player = {
   socketId: string | null; // null while disconnected (within grace window) or for host-added players
@@ -45,12 +48,6 @@ const g = globalThis as GlobalWithRooms;
 const rooms: Map<string, RoomState> = g[ROOMS_KEY] ?? new Map<string, RoomState>();
 g[ROOMS_KEY] = rooms;
 
-const MARBLE_COLORS = [
-  '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
-  '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b',
-  '#10b981', '#a855f7',
-];
-
 export function createRoom(): { roomId: string; hostToken: string } {
   // Avoid collisions
   let id = newRoomId();
@@ -75,9 +72,8 @@ export function createRoom(): { roomId: string; hostToken: string } {
 // Dev-only: seed 5 fake players so a single browser tab can test multiplayer flows
 // without juggling incognito windows. Bots have no socket — they sit in the room as
 // `connected: true` and get included in the simulation like any real player.
-const DEV_BOT_NAMES = ['봇1', '봇2', '봇3', '봇4', '봇5'];
 function seedDevBots(room: RoomState) {
-  for (const name of DEV_BOT_NAMES) {
+  for (const name of ko.dev.botNames) {
     const token = newPlayerToken();
     const color = MARBLE_COLORS[room.players.size % MARBLE_COLORS.length];
     room.players.set(token, {
@@ -148,19 +144,17 @@ export function touch(room: RoomState) {
   scheduleCleanup(room);
 }
 
-const ROOM_IDLE_MS = 10 * 60_000; // 10 min idle → cleanup
-
 function scheduleCleanup(room: RoomState) {
   if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
   room.cleanupTimer = setTimeout(() => {
     const idleFor = Date.now() - room.lastActivityAt;
     const empty = [...room.players.values()].every((p) => !p.connected);
-    if (idleFor >= ROOM_IDLE_MS || empty) {
+    if (idleFor >= ROOM.IDLE_MS || empty) {
       deleteRoom(room.id);
     } else {
       scheduleCleanup(room);
     }
-  }, ROOM_IDLE_MS);
+  }, ROOM.IDLE_MS);
 }
 
 export function snapshotPlayers(room: RoomState) {

@@ -1,34 +1,14 @@
 'use client';
 
 import { create } from 'zustand';
+import type {
+  GameStartPayload,
+  PublicPlayer,
+  PublicRoomState,
+  ResultPayload,
+} from '@/lib/protocol';
 
-export type PublicPlayer = {
-  playerToken: string;
-  nickname: string;
-  connected: boolean;
-  color: string;
-  manual: boolean;
-};
-
-export type PublicRoomState = {
-  id: string;
-  status: 'lobby' | 'countdown' | 'playing' | 'result';
-  gameId: 'marble' | 'slot' | 'elimination' | 'reaction';
-  loserCount: number;
-  players: PublicPlayer[];
-  currentRound?: { gameId: string; startAt: number; durationMs: number };
-};
-
-export type GameStartPayload = {
-  gameId: 'marble' | 'slot' | 'elimination' | 'reaction';
-  seed: number;
-  startAt: number;
-  durationMs: number;
-  replay: unknown;
-  players: { playerToken: string; nickname: string; color: string }[];
-};
-
-export type ResultPayload = { ranking: string[]; losers: string[] };
+export type { GameStartPayload, PublicPlayer, PublicRoomState, ResultPayload };
 
 type RoomStore = {
   myToken: string | null;

@@ -19,11 +19,12 @@ export type GameServerModule = {
   computeResult(input: ComputeResultInput): ReplayPayload | Promise<ReplayPayload>;
 };
 
+// Technical metadata only. Display label lives in `ko.games[id]` (i18n).
 export const GAME_META = {
-  marble: { label: '마블 레이스', emoji: '🏁', estimatedSeconds: 35, needsClientInput: false, enabled: true },
-  slot: { label: '슬롯머신 룰렛', emoji: '🎰', estimatedSeconds: 8, needsClientInput: false, enabled: false },
-  elimination: { label: '탈락 룰렛', emoji: '🎯', estimatedSeconds: 20, needsClientInput: false, enabled: false },
-  reaction: { label: '동시탭 반응속도', emoji: '⚡', estimatedSeconds: 6, needsClientInput: true, enabled: false },
+  marble: { emoji: '🏁', estimatedSeconds: 35, needsClientInput: false, enabled: true },
+  slot: { emoji: '🎰', estimatedSeconds: 8, needsClientInput: false, enabled: false },
+  elimination: { emoji: '🎯', estimatedSeconds: 20, needsClientInput: false, enabled: false },
+  reaction: { emoji: '⚡', estimatedSeconds: 6, needsClientInput: true, enabled: false },
 } as const;
 
 export type GameId = keyof typeof GAME_META;

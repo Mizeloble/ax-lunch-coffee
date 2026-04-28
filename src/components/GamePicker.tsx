@@ -38,10 +38,10 @@ export function GamePicker({
           >
             <div className="text-2xl leading-none">{m.emoji}</div>
             <div className={clsx('font-bold mt-1.5 text-[15px]', isSelected && 'text-amber-200')}>
-              {m.label}
+              {ko.games[id]}
             </div>
             <div className={clsx('text-[11px] mt-0.5', isSelected ? 'text-amber-200/80' : 'text-zinc-400')}>
-              ~{m.estimatedSeconds}초 · 물리 기반
+              {ko.games.physicsEstimate(m.estimatedSeconds)}
             </div>
           </button>
         );

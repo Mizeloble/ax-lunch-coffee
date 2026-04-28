@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from 'next';
+import { ko } from '@/lib/i18n';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: '점심 커피내기',
-  description: '폰으로 같이 하는 커피내기 게임',
+  title: ko.app.title,
+  description: ko.app.metaDescription,
 };
 
 export const viewport: Viewport = {

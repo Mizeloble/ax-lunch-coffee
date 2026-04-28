@@ -33,7 +33,7 @@ export function InviteSheet({ url, onClose }: { url: string; onClose: () => void
     try {
       await (navigator as Navigator & { share: (data: ShareData) => Promise<void> }).share({
         title: ko.app.title,
-        text: '같이 커피내기 하실래요?',
+        text: ko.invite.shareText,
         url,
       });
     } catch {
@@ -48,7 +48,7 @@ export function InviteSheet({ url, onClose }: { url: string; onClose: () => void
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-extrabold -tracking-wide">{ko.lobby.invite}</h2>
           <button type="button" onClick={onClose} className="text-zinc-400 px-2 py-1 text-sm">
-            닫기
+            {ko.invite.close}
           </button>
         </div>
         <div className="flex flex-col items-center gap-3">
@@ -62,7 +62,7 @@ export function InviteSheet({ url, onClose }: { url: string; onClose: () => void
             onClick={copy}
             className="py-3 rounded-xl bg-zinc-800 font-medium active:scale-[0.98]"
           >
-            {copied ? '복사됨 ✓' : ko.lobby.copyLink}
+            {copied ? ko.invite.copied : ko.lobby.copyLink}
           </button>
           <button
             type="button"
