@@ -151,7 +151,7 @@ export function drawScene(
   }
 
   // Marbles
-  const r = MARBLE_RADIUS * scale;
+  const baseR = MARBLE_RADIUS * scale;
   ctx.font = `bold ${14 * dpr}px sans-serif`;
   ctx.textAlign = 'center';
   // Pulse phase shared across the frame's my-marble effects.
@@ -168,6 +168,10 @@ export function drawScene(
     const sxp = x * scale + offsetX;
     const syp = y * scale + offsetY;
     const isMe = token === myPlayerToken;
+    // Cheered marbles look smaller too (matches the -18% physics radius), so the
+    // "small + glowing + ahead" silhouette reads instantly. ratio is 0 for plain `marble`.
+    const ratio = replay.chargeRatios?.[i] ?? 0;
+    const r = baseR * (1 - 0.18 * ratio);
     const offTop = syp < py - 30;
     const offBottom = syp > py + ph + 30;
     if (offTop || offBottom) {

@@ -10,6 +10,10 @@
 5. `RoomClient.tsx`에서 `gameId`별 분기에 추가
 6. 검증 끝나면 `enabled: true`
 
+## 메타 플래그
+- `needsClientInput: true` — 게임 *진행 중* 입력을 모음 (예: reaction의 `tapOffsets`).
+- `needsPreCharge: true` — 게임 *시작 직전* 5초 탭 충전 페이즈 끼움 (예: marble-cheer). 입력은 `chargeRatios`로 `computeResult`에 전달됨. 페이즈 자체는 `src/server/socket.ts`가 자동 처리하므로 게임 모듈은 비율을 *해석*만 하면 됨.
+
 ## 금기
 - `Renderer`에서 결과를 다시 계산하지 않기 — 서버 ranking이 진실.
 - `computeResult` 안에서 `Date.now()`/전역 RNG 사용 금지. 전부 `seed` 인자로.

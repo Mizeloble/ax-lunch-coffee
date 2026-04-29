@@ -1,6 +1,7 @@
 import type { Server as IOServer, Socket } from 'socket.io';
 import {
   addPlayer,
+  clearCharge,
   findPlayerBySocket,
   getRoom,
   isHostToken,
@@ -11,6 +12,7 @@ import {
 import { runGame } from './game-runner';
 import { ko } from '../lib/i18n';
 import { GAME, NICKNAME, ROOM } from '../lib/constants';
+import { GAME_META } from '../games/types';
 import type { ClientToServerEvents, ServerToClientEvents } from '../lib/protocol';
 
 type IO = IOServer<ClientToServerEvents, ServerToClientEvents>;
@@ -87,6 +89,7 @@ export function attachSocketHandlers(io: IO) {
       const guard = requireHost(currentRoomId, socket);
       if (!guard.ok) return;
       const { room } = guard;
+      if (room.status !== 'lobby' && room.status !== 'result') return;
       room.loserCount = clamp(Math.floor(count), GAME.LOSER_COUNT_MIN, GAME.LOSER_COUNT_MAX);
       touch(room);
       io.to(room.id).emit('state', publicRoomState(room));
@@ -96,6 +99,7 @@ export function attachSocketHandlers(io: IO) {
       const guard = requireHost(currentRoomId, socket);
       if (!guard.ok) return;
       const { room } = guard;
+      if (room.status !== 'lobby' && room.status !== 'result') return;
       room.gameId = gameId;
       touch(room);
       io.to(room.id).emit('state', publicRoomState(room));
@@ -108,56 +112,32 @@ export function attachSocketHandlers(io: IO) {
 
       const connectedPlayers = [...room.players.values()].filter((p) => p.connected);
       if (connectedPlayers.length < GAME.MIN_PLAYERS) return;
-      if (room.status === 'countdown' || room.status === 'playing') return;
+      if (room.status === 'charging' || room.status === 'countdown' || room.status === 'playing') return;
 
-      const seed = (Math.random() * 0x7fffffff) | 0;
-      // Mark as countdown immediately so a second click is ignored even while WASM loads
-      room.status = 'countdown';
-      io.to(room.id).emit('state', publicRoomState(room));
-
-      let replay;
-      try {
-        replay = await runGame({ gameId: room.gameId, seed, players: connectedPlayers, loserCount: room.loserCount });
-      } catch (err) {
-        console.error('runGame failed', err);
-        room.status = 'lobby';
-        io.to(room.id).emit('state', publicRoomState(room));
-        return;
+      const meta = GAME_META[room.gameId];
+      if (meta.needsPreCharge) {
+        startChargingPhase(io, room);
+      } else {
+        await runRound(io, room, /*chargeRatios*/ undefined);
       }
+    });
 
-      const startAt = Date.now() + GAME.COUNTDOWN_MS;
-      room.currentRound = { gameId: room.gameId, seed, startAt, replay };
-      touch(room);
-      io.to(room.id).emit('state', publicRoomState(room));
-      io.to(room.id).emit('countdown', { startAt });
-      io.to(room.id).emit('game:start', {
-        gameId: room.gameId,
-        seed,
-        startAt,
-        durationMs: replay.durationMs,
-        replay: replay.data,
-        players: connectedPlayers.map((p) => ({ playerToken: p.playerToken, nickname: p.nickname, color: p.color })),
-      });
-
-      // Move to playing at startAt; result emit is fire-and-forget after duration
-      setTimeout(() => {
-        if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
-        room.status = 'playing';
-        io.to(room.id).emit('state', publicRoomState(room));
-      }, GAME.COUNTDOWN_MS);
-
-      setTimeout(() => {
-        if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
-        room.status = 'result';
-        io.to(room.id).emit('state', publicRoomState(room));
-        io.to(room.id).emit('game:result', { ranking: replay.ranking, losers: replay.losers });
-      }, GAME.COUNTDOWN_MS + replay.durationMs);
+    socket.on('charge:tick', ({ count }) => {
+      const room = currentRoomId ? getRoom(currentRoomId) : null;
+      if (!room || room.status !== 'charging' || !room.charge) return;
+      const player = findPlayerBySocket(room, socket.id);
+      if (!player) return;
+      const safe = Math.max(0, Math.min(GAME.CHARGE_TAP_CAP, Math.floor(count)));
+      const prev = room.charge.counts.get(player.playerToken) ?? 0;
+      // Idempotent: client sends cumulative count, we keep the maximum.
+      if (safe > prev) room.charge.counts.set(player.playerToken, safe);
     });
 
     socket.on('reset', () => {
       const guard = requireHost(currentRoomId, socket);
       if (!guard.ok) return;
       const { room } = guard;
+      clearCharge(room);
       room.status = 'lobby';
       room.currentRound = undefined;
       touch(room);
@@ -184,6 +164,113 @@ export function attachSocketHandlers(io: IO) {
       }, ROOM.RECONNECT_GRACE_MS);
     });
   });
+}
+
+// --- charge / round flow ---------------------------------------------------
+
+/**
+ * Pre-game tap-charging phase used by games with `needsPreCharge` (currently
+ * marble-cheer). Broadcasts an aggregate `charge:state` every CHARGE_TICK_MS so
+ * clients can render gauges, then runs the round with chargeRatios derived from
+ * each player's tap total. Manual (no-phone) players default to a neutral 50%.
+ */
+function startChargingPhase(io: IO, room: RoomState) {
+  const endsAt = Date.now() + GAME.CHARGE_MS;
+  room.status = 'charging';
+
+  const tickTimer = setInterval(() => {
+    if (!room.charge) return;
+    const totals: Record<string, number> = {};
+    for (const [token, count] of room.charge.counts) totals[token] = count;
+    io.to(room.id).emit('charge:state', { totals, cap: GAME.CHARGE_TAP_CAP });
+  }, GAME.CHARGE_TICK_MS);
+
+  const finishTimer = setTimeout(async () => {
+    if (!getRoom(room.id) || room.status !== 'charging') return;
+
+    const counts = room.charge?.counts ?? new Map<string, number>();
+    clearCharge(room);
+
+    const chargeRatios: Record<string, number> = {};
+    for (const p of room.players.values()) {
+      if (p.manual) {
+        chargeRatios[p.playerToken] = GAME.CHARGE_MANUAL_DEFAULT;
+      } else {
+        const c = counts.get(p.playerToken) ?? 0;
+        chargeRatios[p.playerToken] = Math.min(c, GAME.CHARGE_TAP_CAP) / GAME.CHARGE_TAP_CAP;
+      }
+    }
+
+    await runRound(io, room, chargeRatios);
+  }, GAME.CHARGE_MS);
+
+  room.charge = { endsAt, counts: new Map(), tickTimer, finishTimer };
+  touch(room);
+  io.to(room.id).emit('state', publicRoomState(room));
+  io.to(room.id).emit('charge:start', { endsAt });
+  // Send an immediate empty state so clients render gauges from t=0 without a 250ms gap.
+  io.to(room.id).emit('charge:state', { totals: {}, cap: GAME.CHARGE_TAP_CAP });
+}
+
+/**
+ * Run sim → broadcast countdown + game:start → schedule playing/result transitions.
+ * Shared by the no-charge path (marble) and the post-charge path (marble-cheer).
+ */
+async function runRound(io: IO, room: RoomState, chargeRatios: Record<string, number> | undefined) {
+  const connectedPlayers = [...room.players.values()].filter((p) => p.connected);
+  if (connectedPlayers.length < GAME.MIN_PLAYERS) {
+    room.status = 'lobby';
+    io.to(room.id).emit('state', publicRoomState(room));
+    return;
+  }
+
+  const seed = (Math.random() * 0x7fffffff) | 0;
+  // Mark as countdown immediately so a second click is ignored even while WASM loads
+  room.status = 'countdown';
+  io.to(room.id).emit('state', publicRoomState(room));
+
+  let replay;
+  try {
+    replay = await runGame({
+      gameId: room.gameId,
+      seed,
+      players: connectedPlayers,
+      loserCount: room.loserCount,
+      chargeRatios,
+    });
+  } catch (err) {
+    console.error('runGame failed', err);
+    room.status = 'lobby';
+    io.to(room.id).emit('state', publicRoomState(room));
+    return;
+  }
+
+  const startAt = Date.now() + GAME.COUNTDOWN_MS;
+  room.currentRound = { gameId: room.gameId, seed, startAt, replay };
+  touch(room);
+  io.to(room.id).emit('state', publicRoomState(room));
+  io.to(room.id).emit('countdown', { startAt });
+  io.to(room.id).emit('game:start', {
+    gameId: room.gameId,
+    seed,
+    startAt,
+    durationMs: replay.durationMs,
+    replay: replay.data,
+    players: connectedPlayers.map((p) => ({ playerToken: p.playerToken, nickname: p.nickname, color: p.color })),
+  });
+
+  setTimeout(() => {
+    if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
+    room.status = 'playing';
+    io.to(room.id).emit('state', publicRoomState(room));
+  }, GAME.COUNTDOWN_MS);
+
+  setTimeout(() => {
+    if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
+    room.status = 'result';
+    io.to(room.id).emit('state', publicRoomState(room));
+    io.to(room.id).emit('game:result', { ranking: replay.ranking, losers: replay.losers });
+  }, GAME.COUNTDOWN_MS + replay.durationMs);
 }
 
 // --- helpers ---------------------------------------------------------------

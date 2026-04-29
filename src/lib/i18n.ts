@@ -112,10 +112,47 @@ export const ko = {
   },
   games: {
     marble: '마블 레이스',
+    'marble-cheer': '응원 마블 레이스',
     slot: '슬롯머신 룰렛',
     elimination: '탈락 룰렛',
     reaction: '동시탭 반응속도',
     physicsEstimate: (s: number) => `~${s}초 · 물리 기반`,
+    cheerEstimate: (s: number) => `~${s}초 · 응원 충전`,
+  },
+  gameIntros: {
+    marble: [
+      '핀이 빼곡한 트랙을 따라 구슬들이 굴러 내려가요',
+      '꼴찌 N명이 커피값을 내요',
+      '결과는 운만 — 가만히 응원만 해요',
+    ],
+    'marble-cheer': [
+      '시작 전 5초간 화면을 미친듯이 탭하면 충전돼요',
+      '응원 받은 구슬은 더 앞에서 출발해요',
+      '작고 무거워져서 핀 사이를 잘 빠져나가요',
+      '꼴찌 N명이 커피값을 내요',
+    ],
+    slot: [
+      '이름들이 슬롯처럼 다다닥 돌다 멈춰요',
+      '멈춘 자리가 패자',
+    ],
+    elimination: [
+      '원형 룰렛이 한 명씩 지목해 탈락',
+      '마지막까지 남으면 살아남아요',
+    ],
+    reaction: [
+      '"지금!" 신호가 뜨면 가장 빨리 탭',
+      '느린 N명이 커피값',
+    ],
+  },
+  charge: {
+    title: '응원 충전!',
+    subtitle: '5초 안에 미친듯이 탭하세요',
+    tapHint: '탭!',
+    secondsLeft: (s: number) => `${s}초`,
+    myGauge: '내 응원',
+    avgGauge: '전체 평균',
+    manualNote: '폰 없는 참가자는 평균값으로 자동 충전돼요',
+    starting: '시작!',
   },
   marble: {
     paneLoserView: '☕ 꼴찌 시점',

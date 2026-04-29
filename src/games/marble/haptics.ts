@@ -35,4 +35,7 @@ export const haptics = {
   loserConfirmed(): void {
     vibrate([0, 0, 0, 200]);
   },
+  chargeTap(): void {
+    vibrate(8);
+  },
 };

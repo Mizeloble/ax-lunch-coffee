@@ -127,9 +127,18 @@ export class Box2dPhysics {
     this.entities = [];
   }
 
-  createMarble(id: number, x: number, y: number): void {
+  /**
+   * `chargeRatio` ∈ [0,1] is a per-marble cheering boost from the pre-charge phase
+   * (used by `marble-cheer`). At max ratio: radius -18%, density +35%. The renderer
+   * draws an outer glow + a slightly smaller body proportional to ratio (see
+   * scene.ts), so the "응원 받은 마블" cue is unmistakable visually as well as
+   * mechanically. Untouched marbles (`marble`) pass `0` → identical to legacy.
+   */
+  createMarble(id: number, x: number, y: number, chargeRatio = 0): void {
+    const ratio = Math.max(0, Math.min(1, chargeRatio));
+    const radius = 0.25 * (1 - 0.18 * ratio);
     const circleShape = new this.Box2D.b2CircleShape();
-    circleShape.set_m_radius(0.25);
+    circleShape.set_m_radius(radius);
 
     const bodyDef = new this.Box2D.b2BodyDef();
     bodyDef.set_type(this.Box2D.b2_dynamicBody);
@@ -137,7 +146,8 @@ export class Box2dPhysics {
 
     const body = this.world.CreateBody(bodyDef);
     // Seeded RNG instead of Math.random() so density (and therefore the result) is reproducible.
-    body.CreateFixture(circleShape, 1 + this.rng());
+    const baseDensity = 1 + this.rng();
+    body.CreateFixture(circleShape, baseDensity * (1 + 0.35 * ratio));
     body.SetAwake(false);
     body.SetEnabled(false);
     this.marbleMap[id] = body;
