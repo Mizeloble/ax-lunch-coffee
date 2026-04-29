@@ -26,6 +26,14 @@ export type ReplayPayload = {
   data?: unknown; // game-specific
 };
 
+export type ChargeState = {
+  endsAt: number;
+  /** playerToken -> cumulative tap count (capped server-side at GAME.CHARGE_TAP_CAP). */
+  counts: Map<string, number>;
+  tickTimer: NodeJS.Timeout;
+  finishTimer: NodeJS.Timeout;
+};
+
 export type RoomState = {
   id: string;
   hostToken: string;
@@ -35,9 +43,17 @@ export type RoomState = {
   loserCount: number; // 1..3
   players: Map<string, Player>; // keyed by playerToken
   currentRound?: { gameId: GameId; seed: number; startAt: number; replay: ReplayPayload };
+  charge?: ChargeState; // present only while status === 'charging'
   lastActivityAt: number;
   cleanupTimer?: NodeJS.Timeout;
 };
+
+export function clearCharge(room: RoomState) {
+  if (!room.charge) return;
+  clearInterval(room.charge.tickTimer);
+  clearTimeout(room.charge.finishTimer);
+  room.charge = undefined;
+}
 
 // IMPORTANT: Next.js API routes (Turbopack-bundled) and the Socket.IO handler (loaded by tsx)
 // run in different module instances, so a plain `new Map()` here would split into two stores

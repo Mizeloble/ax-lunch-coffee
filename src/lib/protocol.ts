@@ -6,7 +6,7 @@
 
 import type { GameId } from '@/games/types';
 
-export type RoomStatus = 'lobby' | 'countdown' | 'playing' | 'result';
+export type RoomStatus = 'lobby' | 'charging' | 'countdown' | 'playing' | 'result';
 
 export type PublicPlayer = {
   playerToken: string;
@@ -38,6 +38,9 @@ export type ResultPayload = { ranking: string[]; losers: string[] };
 
 export type CountdownPayload = { startAt: number };
 
+export type ChargeStartPayload = { endsAt: number };
+export type ChargeStatePayload = { totals: Record<string, number>; cap: number };
+
 export type ErrorPayload = { code: string; message: string };
 
 export type JoinAck =
@@ -57,6 +60,8 @@ export type ServerToClientEvents = {
   joined: (payload: { you: { playerToken: string; isHost: boolean } }) => void;
   error: (payload: ErrorPayload) => void;
   countdown: (payload: CountdownPayload) => void;
+  'charge:start': (payload: ChargeStartPayload) => void;
+  'charge:state': (payload: ChargeStatePayload) => void;
   'game:start': (payload: GameStartPayload) => void;
   'game:result': (payload: ResultPayload) => void;
 };
@@ -70,6 +75,8 @@ export type ClientToServerEvents = {
   setGameId: (payload: { gameId: GameId }) => void;
   start: () => void;
   reset: () => void;
+  /** Charge phase: client sends cumulative tap count (idempotent). */
+  'charge:tick': (payload: { count: number }) => void;
   'host:addPlayer': (
     payload: { nickname: string },
     ack: (res: AddPlayerAck) => void,

@@ -9,6 +9,7 @@ import { useRoomStore, type GameStartPayload, type PublicRoomState, type ResultP
 import { Lobby } from '@/components/Lobby';
 import { JoinModal } from '@/components/JoinModal';
 import { Countdown } from '@/components/Countdown';
+import { ChargePhase } from '@/components/ChargePhase';
 import { ResultScreen } from '@/components/ResultScreen';
 import { MarbleRenderer } from '@/games/marble/Renderer';
 import type { SimulationResult } from '@/games/marble/sim';
@@ -206,14 +207,19 @@ export default function RoomClient({
   // In-room rendering
   const effectiveStartAt = replayStartAt ?? gameStart?.startAt ?? 0;
   const showCountdown = !!gameStart && Date.now() < effectiveStartAt + 200;
+  const inCharging = state?.status === 'charging';
   const inResult = state?.status === 'result';
   const replayPlayed = !!gameStart;
   // Keep the marble screen visible after the server flips to 'result' until the
   // user taps through. Players who joined late (no gameStart) skip straight to
   // the result screen since there's no replay to wait on.
-  const showGame = replayPlayed && state?.status !== 'lobby' && (!inResult || !resultAcked);
+  const showGame =
+    replayPlayed && state?.status !== 'lobby' && state?.status !== 'charging' && (!inResult || !resultAcked);
   const showResult = inResult && (resultAcked || !replayPlayed);
   const showResultPrompt = inResult && replayPlayed && !resultAcked;
+  // marble and marble-cheer share the same renderer (same SimulationResult shape).
+  const isMarbleLikeGame =
+    !!gameStart && (gameStart.gameId === 'marble' || gameStart.gameId === 'marble-cheer');
 
   function handleReplay() {
     setReplayStartAt(Date.now() + UI.REPLAY_LEAD_MS);
@@ -222,11 +228,13 @@ export default function RoomClient({
 
   return (
     <>
-      {state && (state.status === 'lobby' || (!showGame && !showResult)) && (
+      {state && (state.status === 'lobby' || (!showGame && !showResult && !inCharging)) && (
         <Lobby inviteUrl={inviteUrl} onChangeNickname={() => setPhase('need-nickname')} />
       )}
 
-      {showGame && gameStart && gameStart.gameId === 'marble' && (
+      {inCharging && <ChargePhase />}
+
+      {showGame && gameStart && isMarbleLikeGame && (
         <div className="fixed inset-0 z-20">
           <MarbleRenderer
             key={effectiveStartAt}

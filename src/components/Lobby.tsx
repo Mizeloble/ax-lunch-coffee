@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ko } from '@/lib/i18n';
 import { useRoomStore } from '@/store/room-store';
 import { GamePicker } from './GamePicker';
+import { GameIntro } from './GameIntro';
 import { InviteSheet } from './InviteSheet';
 import { getSocket } from '@/lib/socket-client';
 import type { GameId } from '@/games/types';
@@ -112,9 +113,10 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
         {/* host controls first */}
         {isHost ? (
           <>
-            <div>
+            <div className="space-y-2">
               <Eyebrow>{ko.lobby.chooseGame}</Eyebrow>
               <GamePicker selected={state.gameId} onSelect={setGameId} />
+              <GameIntro gameId={state.gameId} />
             </div>
 
             <div>
@@ -142,8 +144,11 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
             </div>
           </>
         ) : (
-          <div className="rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 text-sm text-zinc-300">
-            {ko.lobby.waitingHostPicking}
+          <div className="space-y-2">
+            <div className="rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 text-sm text-zinc-300">
+              {ko.lobby.waitingHostPicking}
+            </div>
+            <GameIntro gameId={state.gameId} />
           </div>
         )}
 

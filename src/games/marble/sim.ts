@@ -33,6 +33,10 @@ export type SimulationResult = {
   // Per-frame playback duration in ms. Currently uniform (no slow-mo) but kept as
   // an array so future per-frame pacing tweaks don't require a wire-format change.
   frameDurations: number[];
+  // marble-cheer only: charge ratio per player (playerOrder-indexed, 0..1).
+  // Used by the renderer to draw an outer glow on cheered marbles. `undefined`
+  // for plain `marble` runs.
+  chargeRatios?: number[];
 };
 
 const FPS = 120; // recording FPS; client interpolates between frames if higher refresh
@@ -44,6 +48,7 @@ const MAX_FRAMES = MAX_SECONDS * FPS;
 export async function simulateRace(
   seed: number,
   players: { playerToken: string }[],
+  chargeRatios?: Record<string, number>,
 ): Promise<SimulationResult> {
   const rng = mulberry32(seed);
 
@@ -53,15 +58,51 @@ export async function simulateRace(
   const stage = stages[0];
   physics.createStage(stage);
 
-  // Marble spawn formula ported from lazygyu/src/marble.ts:72
+  // Marble spawn — line/slot grid ported from lazygyu/src/marble.ts:72, but slots
+  // within each line are now picked randomly (seeded) instead of filled left-to-right,
+  // so each round looks visibly different. With ≤10 players in line 0, this means
+  // the marbles spread out across the full spawn band (e.g. positions 0,3,5,8,9)
+  // rather than always clustering at the left.
+  const SLOTS_PER_LINE = 10;
   const max = players.length;
   const maxLine = Math.ceil(max / 10);
   const lineDelta = -Math.max(0, Math.ceil(maxLine - 5));
+
+  // Build the pool of (line, slotInLine) positions, picking distinct slots per line.
+  const positions: { line: number; slotInLine: number }[] = [];
+  let remaining = players.length;
+  for (let l = 0; remaining > 0; l++) {
+    const slotPool: number[] = [];
+    for (let k = 0; k < SLOTS_PER_LINE; k++) slotPool.push(k);
+    // Fisher–Yates with the seeded rng so the layout is reproducible per seed.
+    for (let k = slotPool.length - 1; k > 0; k--) {
+      const j = Math.floor(rng() * (k + 1));
+      [slotPool[k], slotPool[j]] = [slotPool[j], slotPool[k]];
+    }
+    const count = Math.min(remaining, SLOTS_PER_LINE);
+    for (let k = 0; k < count; k++) positions.push({ line: l, slotInLine: slotPool[k] });
+    remaining -= count;
+  }
+  // Shuffle player→position mapping so player[0] doesn't always end up in line 0.
+  for (let k = positions.length - 1; k > 0; k--) {
+    const j = Math.floor(rng() * (k + 1));
+    [positions[k], positions[j]] = [positions[j], positions[k]];
+  }
+
+  // Per-player ratio array, ordered to match `players` (and thus `playerOrder`).
+  const ratios: number[] = new Array(players.length).fill(0);
   for (let i = 0; i < players.length; i++) {
-    const line = Math.floor(i / 10);
-    const x = 10.25 + (i % 10) * 0.6;
-    const y = maxLine - line + lineDelta;
-    physics.createMarble(i, x, y);
+    const { line, slotInLine } = positions[i];
+    const x = 10.25 + slotInLine * 0.6;
+    const baseY = maxLine - line + lineDelta;
+    const ratio = chargeRatios?.[players[i].playerToken] ?? 0;
+    ratios[i] = ratio;
+    // Cheered marbles spawn well ahead of the pack (positive y is downward in box2d
+    // gravity here). Up to 5.0m of head-start — clearly separated from non-cheered
+    // marbles the moment the race begins; head-start is the *primary* visual cue
+    // for the cheer effect.
+    const y = baseY + 5.0 * ratio;
+    physics.createMarble(i, x, y, ratio);
   }
 
   physics.start();
@@ -201,6 +242,7 @@ export async function simulateRace(
     zoomY: stage.zoomY,
     bounds: { minX, maxX, minY, maxY },
     frameDurations,
+    chargeRatios: chargeRatios ? ratios : undefined,
   };
 }
 

@@ -50,6 +50,21 @@ export function upperBound(arr: number[], target: number): number {
   return lo;
 }
 
+/**
+ * Convert a `#rrggbb` hex color string to an `rgba(...)` string with the given alpha.
+ * Falls back to amber-400 if the input doesn't parse, so the renderer never crashes
+ * on a stray color value.
+ */
+export function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return `rgba(251,191,36,${alpha})`;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let lo = 0;

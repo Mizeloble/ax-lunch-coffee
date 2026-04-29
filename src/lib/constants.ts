@@ -17,6 +17,14 @@ export const GAME = {
   /** Inclusive bounds for the host's loser-count selector. */
   LOSER_COUNT_MIN: 1,
   LOSER_COUNT_MAX: 3,
+  /** Pre-charge phase length for games with `needsPreCharge` (e.g. marble-cheer). */
+  CHARGE_MS: 5000,
+  /** Server-side broadcast cadence of aggregate charge totals during charging. */
+  CHARGE_TICK_MS: 250,
+  /** Per-player tap cap during the charge phase. Anti-macro. */
+  CHARGE_TAP_CAP: 50,
+  /** Default charge ratio for manual (no-phone) players. */
+  CHARGE_MANUAL_DEFAULT: 0.5,
 } as const;
 
 export const NICKNAME = {
