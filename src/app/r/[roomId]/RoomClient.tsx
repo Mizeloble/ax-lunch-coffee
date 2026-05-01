@@ -15,6 +15,8 @@ import { MarbleRenderer } from '@/games/marble/Renderer';
 import type { SimulationResult } from '@/games/marble/sim';
 import { ReactionRenderer } from '@/games/reaction/Renderer';
 import type { ReactionReplayData } from '@/games/reaction/server';
+import { TriviaRenderer } from '@/games/trivia/Renderer';
+import type { TriviaReplayData } from '@/games/trivia/server';
 import { ROOM, UI } from '@/lib/constants';
 import type { JoinAck } from '@/lib/protocol';
 
@@ -216,16 +218,18 @@ export default function RoomClient({
   const isMarbleLikeGame =
     !!gameStart && (gameStart.gameId === 'marble' || gameStart.gameId === 'marble-cheer');
   const isReactionGame = !!gameStart && gameStart.gameId === 'reaction';
-  // Marble keeps the renderer visible past the result flip so its replay frames
-  // can finish, gated by a tap-to-continue prompt. Reaction has nothing to watch
-  // after the deadline — surface the result screen immediately.
+  const isTriviaGame = !!gameStart && gameStart.gameId === 'trivia';
+  // Reaction and trivia have nothing to "watch" after the round ends — flip to
+  // result immediately. Marble keeps the renderer visible past the flip so replay
+  // frames finish, gated by a tap-to-continue prompt.
+  const skipResultGate = isReactionGame || isTriviaGame;
   const showGame =
     replayPlayed &&
     state?.status !== 'lobby' &&
     state?.status !== 'charging' &&
-    (!inResult || (!resultAcked && !isReactionGame));
-  const showResult = inResult && (resultAcked || !replayPlayed || isReactionGame);
-  const showResultPrompt = inResult && replayPlayed && !resultAcked && !isReactionGame;
+    (!inResult || (!resultAcked && !skipResultGate));
+  const showResult = inResult && (resultAcked || !replayPlayed || skipResultGate);
+  const showResultPrompt = inResult && replayPlayed && !resultAcked && !skipResultGate;
 
   function handleReplay() {
     setReplayStartAt(Date.now() + UI.REPLAY_LEAD_MS);
@@ -267,9 +271,24 @@ export default function RoomClient({
         </div>
       )}
 
-      {showCountdown && gameStart && !isReactionGame && <Countdown startAt={effectiveStartAt} />}
+      {showGame && gameStart && isTriviaGame && (
+        <div className="fixed inset-0 z-20">
+          <TriviaRenderer
+            key={effectiveStartAt}
+            startAt={effectiveStartAt}
+            durationMs={gameStart.durationMs}
+            replay={gameStart.replay as TriviaReplayData}
+            players={gameStart.players}
+            myPlayerToken={myToken}
+          />
+        </div>
+      )}
 
-      {showResult && <ResultScreen onReplay={isReactionGame ? undefined : handleReplay} />}
+      {showCountdown && gameStart && !isReactionGame && !isTriviaGame && (
+        <Countdown startAt={effectiveStartAt} />
+      )}
+
+      {showResult && <ResultScreen onReplay={skipResultGate ? undefined : handleReplay} />}
 
       {showResultPrompt && (
         <button

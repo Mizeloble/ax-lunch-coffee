@@ -6,6 +6,9 @@ export type GameInputPlayer = {
   color: string;
 };
 
+// Per-question answer captured by the server. Index = question position in schedule.
+export type TriviaPerPlayerAnswers = Array<{ choice: 0 | 1 | 2 | 3; atOffsetMs: number } | null>;
+
 export type ComputeResultInput = {
   seed: number;
   players: GameInputPlayer[];
@@ -14,6 +17,8 @@ export type ComputeResultInput = {
   tapOffsets?: Record<string, number | null>;
   // For pre-charge games (marble-cheer): playerToken -> [0,1] charge ratio (tap count / cap)
   chargeRatios?: Record<string, number>;
+  // For multi-question games (trivia): playerToken -> per-question answer array.
+  triviaAnswers?: Record<string, TriviaPerPlayerAnswers>;
 };
 
 /**
@@ -72,6 +77,13 @@ export const GAME_META = {
   reaction: {
     emoji: '⚡',
     estimatedSeconds: 6,
+    needsClientInput: true,
+    needsPreCharge: false,
+    enabled: true,
+  },
+  trivia: {
+    emoji: '🧠',
+    estimatedSeconds: 33,
     needsClientInput: true,
     needsPreCharge: false,
     enabled: true,

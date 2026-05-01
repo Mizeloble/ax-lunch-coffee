@@ -35,6 +35,14 @@ export const GAME = {
   REACTION_MIN_HUMAN_RT_MS: 80,
   /** Reaction game: post-deadline buffer before broadcasting result, lets last in-flight tap arrive. */
   REACTION_TAIL_MS: 600,
+  /** Trivia game: number of questions per round. */
+  TRIVIA_QUESTION_COUNT: 3,
+  /** Trivia game: time window per question (read + answer). */
+  TRIVIA_QUESTION_MS: 8000,
+  /** Trivia game: post-question reveal phase showing the correct answer. */
+  TRIVIA_REVEAL_MS: 2000,
+  /** Trivia game: tail buffer after the last reveal before broadcasting result. */
+  TRIVIA_TAIL_MS: 3000,
 } as const;
 
 export const NICKNAME = {

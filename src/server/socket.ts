@@ -3,6 +3,7 @@ import {
   addPlayer,
   clearCharge,
   clearReaction,
+  clearTrivia,
   findPlayerBySocket,
   getRoom,
   isHostToken,
@@ -11,9 +12,11 @@ import {
   type RoomState,
 } from './rooms';
 import { prepareGameIntro, runGame } from './game-runner';
+import { buildTriviaPlan, type TriviaReplayData } from '../games/trivia/server';
 import { ko } from '../lib/i18n';
 import { GAME, NICKNAME, ROOM } from '../lib/constants';
 import { GAME_META } from '../games/types';
+import type { TriviaPerPlayerAnswers } from '../games/types';
 import type { ClientToServerEvents, ServerToClientEvents } from '../lib/protocol';
 import { mulberry32 } from '../games/reaction/server';
 
@@ -118,7 +121,11 @@ export function attachSocketHandlers(io: IO) {
 
       const meta = GAME_META[room.gameId];
       if (meta.needsClientInput) {
-        await runReactionRound(io, room);
+        if (room.gameId === 'trivia') {
+          await runTriviaRound(io, room);
+        } else {
+          await runReactionRound(io, room);
+        }
       } else if (meta.needsPreCharge) {
         startChargingPhase(io, room);
       } else {
@@ -152,12 +159,35 @@ export function attachSocketHandlers(io: IO) {
       room.reaction.firstTaps.set(player.playerToken, offset);
     });
 
+    socket.on('trivia:answer', ({ qIndex, choice }) => {
+      // Capture arrival time IMMEDIATELY — server-arrival is the truth for tiebreak.
+      const arrivalAt = Date.now();
+      const room = currentRoomId ? getRoom(currentRoomId) : null;
+      if (!room || room.gameId !== 'trivia' || !room.trivia) return;
+      if (room.status !== 'playing') return;
+      if (typeof qIndex !== 'number' || !Number.isInteger(qIndex)) return;
+      if (qIndex < 0 || qIndex >= room.trivia.openAts.length) return;
+      if (choice !== 0 && choice !== 1 && choice !== 2 && choice !== 3) return;
+      const openAt = room.trivia.openAts[qIndex];
+      const closeAt = room.trivia.closeAts[qIndex];
+      // Strict window: only accept answers for the question that's currently open.
+      if (arrivalAt < openAt || arrivalAt > closeAt) return;
+      const player = findPlayerBySocket(room, socket.id);
+      if (!player) return;
+      const answers = room.trivia.answers.get(player.playerToken);
+      if (!answers) return;
+      // First answer per question only.
+      if (answers[qIndex]) return;
+      answers[qIndex] = { choice, atOffsetMs: arrivalAt - openAt };
+    });
+
     socket.on('reset', () => {
       const guard = requireHost(currentRoomId, socket);
       if (!guard.ok) return;
       const { room } = guard;
       clearCharge(room);
       clearReaction(room);
+      clearTrivia(room);
       room.status = 'lobby';
       room.currentRound = undefined;
       touch(room);
@@ -332,6 +362,122 @@ async function runReactionRound(io: IO, room: RoomState) {
     durationMs: intro.durationMs,
     // offsets stays empty here — populated on the post-round state broadcast.
     replay: { goAt, deadlineAt, offsets: {} as Record<string, number | null> },
+    players: connectedPlayers.map((p) => ({
+      playerToken: p.playerToken,
+      nickname: p.nickname,
+      color: p.color,
+    })),
+  });
+
+  setTimeout(() => {
+    if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
+    room.status = 'playing';
+    io.to(room.id).emit('state', publicRoomState(room));
+  }, GAME.COUNTDOWN_MS);
+}
+
+/**
+ * Trivia game round: client-input game with N sequential question phases. Flow:
+ *   1. countdown (3s) — clients render "준비…" off the renderer's startAt gate.
+ *   2. for each question i: phase open at openAt[i], close at closeAt[i] = openAt[i] + QUESTION_MS.
+ *      Server accepts `trivia:answer` only when arrival is in [openAt[i], closeAt[i]].
+ *      Reveal phase (REVEAL_MS) follows; client highlights correct choice off the
+ *      schedule it received in `game:start.replay`.
+ *   3. after the last reveal + TRIVIA_TAIL_MS, build per-player answer arrays and
+ *      call computeResult to derive ranking.
+ *
+ * Like reaction, `game:start` carries a full intro replay (the entire schedule +
+ * questions + correct indices). The final `game:result` only needs ranking/losers.
+ */
+async function runTriviaRound(io: IO, room: RoomState) {
+  const connectedPlayers = [...room.players.values()].filter((p) => p.connected);
+  if (connectedPlayers.length < GAME.MIN_PLAYERS) return;
+
+  const seed = (Math.random() * 0x7fffffff) | 0;
+  const plan = buildTriviaPlan(seed);
+  if (plan.questions.length === 0) {
+    console.error('trivia plan returned no questions');
+    return;
+  }
+
+  const startAt = Date.now() + GAME.COUNTDOWN_MS;
+  const openAts = plan.schedule.openAtOffsets.map((off) => startAt + off);
+  const closeAts = plan.schedule.closeAtOffsets.map((off) => startAt + off);
+  const lastCloseAt = closeAts[closeAts.length - 1];
+
+  // Status=countdown immediately; stash an intro replay so mid-play reconnects can
+  // sync the schedule and questions via `currentRound.replay`.
+  room.status = 'countdown';
+  const introData: TriviaReplayData = {
+    schedule: plan.schedule,
+    questions: plan.questions,
+  };
+  const introReplay = {
+    durationMs: plan.durationMs,
+    ranking: [] as string[],
+    losers: [] as string[],
+    data: introData,
+  };
+  room.currentRound = { gameId: 'trivia', seed, startAt, replay: introReplay };
+
+  // Pre-allocate per-player answer slots so the `trivia:answer` handler can no-op
+  // for unknown tokens. Each entry mutates in place.
+  const answers = new Map<string, Array<{ choice: 0 | 1 | 2 | 3; atOffsetMs: number } | null>>();
+  for (const p of connectedPlayers) {
+    answers.set(
+      p.playerToken,
+      Array.from({ length: plan.questions.length }, () => null),
+    );
+  }
+
+  const finishTimer = setTimeout(async () => {
+    if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
+    if (!room.trivia) return;
+
+    const triviaAnswers: Record<string, TriviaPerPlayerAnswers> = {};
+    for (const p of connectedPlayers) {
+      // Manual players can't answer — they get a row of nulls (0 score, infinite-equivalent
+      // tiebreak via deterministic token order).
+      triviaAnswers[p.playerToken] = p.manual
+        ? Array.from({ length: plan.questions.length }, () => null)
+        : (room.trivia?.answers.get(p.playerToken) ?? Array.from({ length: plan.questions.length }, () => null));
+    }
+
+    let replay;
+    try {
+      replay = await runGame({
+        gameId: 'trivia',
+        seed,
+        players: connectedPlayers,
+        loserCount: room.loserCount,
+        triviaAnswers,
+      });
+    } catch (err) {
+      console.error('trivia runGame failed', err);
+      clearTrivia(room);
+      room.status = 'lobby';
+      room.currentRound = undefined;
+      io.to(room.id).emit('state', publicRoomState(room));
+      return;
+    }
+
+    room.currentRound = { gameId: 'trivia', seed, startAt, replay };
+    clearTrivia(room);
+    room.status = 'result';
+    io.to(room.id).emit('state', publicRoomState(room));
+    io.to(room.id).emit('game:result', { ranking: replay.ranking, losers: replay.losers });
+  }, lastCloseAt + GAME.TRIVIA_TAIL_MS - Date.now());
+
+  room.trivia = { openAts, closeAts, answers, finishTimer };
+  touch(room);
+  io.to(room.id).emit('state', publicRoomState(room));
+  io.to(room.id).emit('countdown', { startAt });
+  io.to(room.id).emit('game:start', {
+    gameId: 'trivia',
+    seed,
+    startAt,
+    durationMs: plan.durationMs,
+    replay: introData,
     players: connectedPlayers.map((p) => ({
       playerToken: p.playerToken,
       nickname: p.nickname,
