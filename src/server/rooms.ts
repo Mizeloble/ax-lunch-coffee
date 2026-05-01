@@ -44,6 +44,18 @@ export type ReactionState = {
   finishTimer: NodeJS.Timeout;
 };
 
+export type TriviaAnswerRecord = { choice: 0 | 1 | 2 | 3; atOffsetMs: number };
+
+export type TriviaState = {
+  /** Wall-clock when each question becomes interactive. */
+  openAts: number[];
+  /** Wall-clock when each question's answer window closes. */
+  closeAts: number[];
+  /** playerToken -> per-question first-answer (null = no answer yet). Length = openAts.length. */
+  answers: Map<string, Array<TriviaAnswerRecord | null>>;
+  finishTimer: NodeJS.Timeout;
+};
+
 export type RoomState = {
   id: string;
   hostToken: string;
@@ -55,6 +67,7 @@ export type RoomState = {
   currentRound?: { gameId: GameId; seed: number; startAt: number; replay: ReplayPayload };
   charge?: ChargeState; // present only while status === 'charging'
   reaction?: ReactionState; // present only during a `reaction` round (countdown + playing)
+  trivia?: TriviaState; // present only during a `trivia` round (countdown + playing)
   lastActivityAt: number;
   cleanupTimer?: NodeJS.Timeout;
 };
@@ -70,6 +83,12 @@ export function clearReaction(room: RoomState) {
   if (!room.reaction) return;
   clearTimeout(room.reaction.finishTimer);
   room.reaction = undefined;
+}
+
+export function clearTrivia(room: RoomState) {
+  if (!room.trivia) return;
+  clearTimeout(room.trivia.finishTimer);
+  room.trivia = undefined;
 }
 
 // IMPORTANT: Next.js API routes (Turbopack-bundled) and the Socket.IO handler (loaded by tsx)
@@ -221,7 +240,7 @@ export function publicRoomState(room: RoomState) {
 }
 
 function shouldExposeReplayData(room: RoomState): boolean {
-  // Only reaction's replay.data is small intro-only metadata. Marble's frames stay
-  // out of state broadcasts to keep them light.
-  return room.gameId === 'reaction';
+  // Only reaction's and trivia's replay.data is small intro-only metadata. Marble's
+  // frames stay out of state broadcasts to keep them light.
+  return room.gameId === 'reaction' || room.gameId === 'trivia';
 }

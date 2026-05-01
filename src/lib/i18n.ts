@@ -116,9 +116,11 @@ export const ko = {
     slot: '슬롯머신 룰렛',
     elimination: '탈락 룰렛',
     reaction: '동시탭 반응속도',
+    trivia: '일반 상식',
     physicsEstimate: (s: number) => `~${s}초 · 물리 기반`,
     cheerEstimate: (s: number) => `~${s}초 · 응원 충전`,
     reactionEstimate: (s: number) => `~${s}초 · 반응 속도`,
+    triviaEstimate: (s: number) => `~${s}초 · 상식 퀴즈`,
   },
   gameIntros: {
     marble: [
@@ -144,6 +146,11 @@ export const ko = {
       '"지금!" 신호가 뜨면 가장 빨리 탭',
       '느린 N명이 커피값',
       '미리 누르면 가장 일찍 누른 순서로 꼴등',
+    ],
+    trivia: [
+      '4지선다 3문제',
+      '맞히면 +1점, 빠를수록 동점에서 유리',
+      '점수 낮은 N명이 커피값',
     ],
   },
   charge: {
@@ -177,6 +184,18 @@ export const ko = {
     tapHint: '여기를 탭',
     waitingTap: '탭 안 했어요',
     youTapped: '기록됨',
+  },
+  trivia: {
+    questionLabel: (n: number, total: number) => `${n}/${total}`,
+    timeLeft: (s: number) => `${s}초`,
+    answered: '제출됨',
+    correctReveal: '정답!',
+    wrongReveal: '오답',
+    noAnswer: '미응답',
+    yourScore: (n: number) => `${n}점`,
+    scoreLabel: '내 점수',
+    finalTabulating: '결과 집계 중…',
+    waitingNext: '다음 문제…',
   },
   dev: {
     botNames: ['봇1', '봇2', '봇3', '봇4', '봇5'] as const,

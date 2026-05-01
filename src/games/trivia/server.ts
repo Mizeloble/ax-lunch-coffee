@@ -1,0 +1,177 @@
+import type { ReplayPayload } from '../../server/rooms';
+import type { ComputeResultInput, GameIntroTimings, GameServerModule } from '../types';
+import { GAME } from '../../lib/constants';
+import { TRIVIA_POOL_SORTED, type TriviaQuestion } from './questions';
+
+/**
+ * Replay payload broadcast on game:start. Carries everything the client needs to
+ * render every question + reveal phase deterministically off wall-clock.
+ *
+ * `correctIndex` is the *post-shuffle* position. Choices are also already shuffled.
+ * Both are server-authoritative; client never recomputes.
+ */
+export type TriviaReplayData = {
+  schedule: {
+    /** ms offsets from startAt — when each question becomes interactive. */
+    openAtOffsets: number[];
+    /** ms offsets from startAt — when the answer window closes / reveal begins. */
+    closeAtOffsets: number[];
+  };
+  questions: Array<{
+    id: string;
+    category: string;
+    question: string;
+    choices: [string, string, string, string];
+    correctIndex: 0 | 1 | 2 | 3;
+  }>;
+};
+
+// Mulberry32 — small fast deterministic PRNG. Same one reaction uses; copying instead
+// of importing because it's seed-only and keeping games independent of each other.
+function mulberry32(seed: number) {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let r = t;
+    r = Math.imul(r ^ (r >>> 15), r | 1);
+    r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function pickQuestions(rng: () => number, count: number): TriviaQuestion[] {
+  const pool = [...TRIVIA_POOL_SORTED];
+  const n = Math.min(count, pool.length);
+  for (let i = 0; i < n; i++) {
+    const j = i + Math.floor(rng() * (pool.length - i));
+    const tmp = pool[i];
+    pool[i] = pool[j];
+    pool[j] = tmp;
+  }
+  return pool.slice(0, n);
+}
+
+function shuffleChoices(
+  rng: () => number,
+  question: TriviaQuestion,
+): { choices: [string, string, string, string]; correctIndex: 0 | 1 | 2 | 3 } {
+  const order = [0, 1, 2, 3];
+  for (let i = 3; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = order[i];
+    order[i] = order[j];
+    order[j] = tmp;
+  }
+  const choices = order.map((idx) => question.choices[idx]) as [string, string, string, string];
+  const correctIndex = order.indexOf(question.correctIndex) as 0 | 1 | 2 | 3;
+  return { choices, correctIndex };
+}
+
+/**
+ * Build the complete intro/replay schedule from a seed. Pure — no Date.now / global RNG.
+ * Used both by `prepareIntro` (for socket.ts to broadcast intro timings) and by
+ * `computeResult` (so the same payload can be reconstructed at result time without
+ * any state leaking through).
+ *
+ * Determinism: a single rng stream consumed in fixed order — pickQuestions first,
+ * then per-question shuffleChoices. Add new rng consumers only at the end to keep
+ * existing seed→output mappings stable.
+ */
+export function buildTriviaPlan(seed: number): {
+  questions: TriviaReplayData['questions'];
+  schedule: TriviaReplayData['schedule'];
+  durationMs: number;
+} {
+  const rng = mulberry32(seed);
+  const picks = pickQuestions(rng, GAME.TRIVIA_QUESTION_COUNT);
+
+  const questions = picks.map((q) => {
+    const { choices, correctIndex } = shuffleChoices(rng, q);
+    return {
+      id: q.id,
+      category: q.category,
+      question: q.question,
+      choices,
+      correctIndex,
+    };
+  });
+
+  const openAtOffsets: number[] = [];
+  const closeAtOffsets: number[] = [];
+  let cursor = 0;
+  for (let i = 0; i < questions.length; i++) {
+    openAtOffsets.push(cursor);
+    cursor += GAME.TRIVIA_QUESTION_MS;
+    closeAtOffsets.push(cursor);
+    cursor += GAME.TRIVIA_REVEAL_MS;
+  }
+  const durationMs = cursor + GAME.TRIVIA_TAIL_MS;
+
+  return {
+    questions,
+    schedule: { openAtOffsets, closeAtOffsets },
+    durationMs,
+  };
+}
+
+export function prepareTriviaIntro(seed: number): GameIntroTimings {
+  const plan = buildTriviaPlan(seed);
+  return {
+    goAtOffsetMs: plan.schedule.openAtOffsets[0] ?? 0,
+    deadlineOffsetMs: plan.schedule.closeAtOffsets[plan.schedule.closeAtOffsets.length - 1] ?? 0,
+    durationMs: plan.durationMs,
+  };
+}
+
+type Entry = {
+  token: string;
+  score: number;
+  // Sum of atOffsetMs for *correct* answers only. Smaller = faster on the questions you got right.
+  speedSum: number;
+};
+
+export const triviaServer: GameServerModule = {
+  computeResult(input: ComputeResultInput): ReplayPayload {
+    const { seed, players, loserCount, triviaAnswers } = input;
+    const plan = buildTriviaPlan(seed);
+
+    const entries: Entry[] = players.map((p) => {
+      const answers = triviaAnswers?.[p.playerToken] ?? [];
+      let score = 0;
+      let speedSum = 0;
+      for (let i = 0; i < plan.questions.length; i++) {
+        const ans = answers[i];
+        if (!ans) continue;
+        if (ans.choice === plan.questions[i].correctIndex) {
+          score++;
+          speedSum += ans.atOffsetMs;
+        }
+      }
+      return { token: p.playerToken, score, speedSum };
+    });
+
+    entries.sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score; // higher score = better
+      if (a.speedSum !== b.speedSum) return a.speedSum - b.speedSum; // faster = better
+      return a.token < b.token ? -1 : a.token > b.token ? 1 : 0;
+    });
+
+    const ranking = entries.map((e) => e.token);
+    const losers = ranking.slice(-loserCount);
+
+    const data: TriviaReplayData = {
+      schedule: plan.schedule,
+      questions: plan.questions,
+    };
+
+    return {
+      durationMs: plan.durationMs,
+      ranking,
+      losers,
+      data,
+    };
+  },
+  prepareIntro({ seed }) {
+    return prepareTriviaIntro(seed);
+  },
+};

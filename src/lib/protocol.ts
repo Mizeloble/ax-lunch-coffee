@@ -85,6 +85,8 @@ export type ClientToServerEvents = {
   'charge:tick': (payload: { count: number }) => void;
   /** Reaction game: tap signal. No payload — server uses arrival time as the source of truth. */
   'reaction:tap': () => void;
+  /** Trivia game: answer for the currently open question. Server uses arrival time, not client timestamps. */
+  'trivia:answer': (payload: { qIndex: number; choice: 0 | 1 | 2 | 3 }) => void;
   'host:addPlayer': (
     payload: { nickname: string },
     ack: (res: AddPlayerAck) => void,

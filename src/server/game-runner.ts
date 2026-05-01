@@ -2,7 +2,8 @@ import type { GameId, Player, ReplayPayload } from './rooms';
 import { marbleServer } from '../games/marble/server';
 import { marbleCheerServer } from '../games/marble-cheer/server';
 import { reactionServer } from '../games/reaction/server';
-import type { GameIntroTimings, GameServerModule } from '../games/types';
+import { triviaServer } from '../games/trivia/server';
+import type { GameIntroTimings, GameServerModule, TriviaPerPlayerAnswers } from '../games/types';
 import { GAME_META } from '../games/types';
 
 const REGISTRY: Record<GameId, GameServerModule | null> = {
@@ -11,6 +12,7 @@ const REGISTRY: Record<GameId, GameServerModule | null> = {
   slot: null,
   elimination: null,
   reaction: reactionServer,
+  trivia: triviaServer,
 };
 
 export async function runGame(args: {
@@ -20,6 +22,7 @@ export async function runGame(args: {
   loserCount: number;
   chargeRatios?: Record<string, number>;
   tapOffsets?: Record<string, number | null>;
+  triviaAnswers?: Record<string, TriviaPerPlayerAnswers>;
 }): Promise<ReplayPayload> {
   const mod = REGISTRY[args.gameId];
   if (!mod) {
@@ -39,6 +42,7 @@ export async function runGame(args: {
     loserCount: args.loserCount,
     chargeRatios: args.chargeRatios,
     tapOffsets: args.tapOffsets,
+    triviaAnswers: args.triviaAnswers,
   });
 }
 
