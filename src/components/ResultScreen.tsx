@@ -98,7 +98,6 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
     .filter((p): p is NonNullable<typeof p> => !!p);
 
   const iLost = !!myToken && result.losers.includes(myToken);
-  const singleLoser = losers.length === 1;
 
   const fullRanking = result.ranking
     .map((tk) => state.players.find((p) => p.playerToken === tk))
@@ -111,7 +110,10 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
   }
 
   return (
-    <main className="fixed inset-0 z-30 bg-[#0b0b10] flex flex-col items-center justify-center px-6 text-center overflow-hidden">
+    <main
+      className="fixed inset-0 z-30 flex flex-col items-center justify-center px-6 text-center overflow-hidden"
+      style={{ background: 'radial-gradient(120% 80% at 50% 0%, #14141c 0%, #0b0b10 55%) #0b0b10' }}
+    >
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
       <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
@@ -124,51 +126,14 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
           </span>
         </div>
 
-        {/* Names — 80px Display for single, 48px stack for multiple */}
-        {singleLoser ? (
-          <>
-            <div
-              className="mt-9 font-black text-zinc-50 leading-none"
-              style={{
-                fontSize: 80,
-                letterSpacing: '-0.05em',
-                textShadow: `0 4px 60px ${losers[0].color}50`,
-              }}
-            >
-              {losers[0].nickname}
-            </div>
-            <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.05] border border-white/[0.08]">
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ background: losers[0].color, boxShadow: `0 0 0 3px ${losers[0].color}30` }}
-              />
-              <span className="text-xs text-zinc-400 font-semibold">{ko.result.loserBadge}</span>
-            </div>
-          </>
-        ) : (
-          <div className="mt-8 flex flex-col gap-1.5">
-            {losers.map((p) => (
-              <div
-                key={p.playerToken}
-                className="font-black text-zinc-50 flex items-center justify-center gap-3.5"
-                style={{ fontSize: 48, letterSpacing: '-0.04em', lineHeight: 1.05 }}
-              >
-                <span
-                  className="w-3 h-3 rounded-full shrink-0"
-                  style={{ background: p.color, boxShadow: `0 0 0 4px ${p.color}30` }}
-                />
-                {p.nickname}
-              </div>
-            ))}
-          </div>
-        )}
+        <LoserBlock losers={losers} />
 
         <div
           className={clsx(
-            'mt-8 text-base font-extrabold -tracking-wide',
+            'mt-8 font-extrabold -tracking-wide',
             iLost ? 'text-rose-300' : 'text-emerald-300',
           )}
-          style={{ fontSize: 17 }}
+          style={{ fontSize: iLost && losers.length === 1 ? 18 : 17 }}
         >
           {iLost ? ko.result.youLost : ko.result.youWon}
         </div>
@@ -262,6 +227,49 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
         </details>
       )}
     </main>
+  );
+}
+
+function LoserBlock({
+  losers,
+}: {
+  losers: { playerToken: string; nickname: string; color: string }[];
+}) {
+  const n = losers.length;
+  const nameSize = n === 1 ? 80 : n === 2 ? 56 : 44;
+  const lineGap = n === 1 ? 0 : n === 2 ? 14 : 10;
+  const dotSize = n === 1 ? 14 : n === 2 ? 12 : 10;
+
+  return (
+    <div className="mt-9 flex flex-col items-center" style={{ gap: lineGap }}>
+      {losers.map((p) => (
+        <div key={p.playerToken} className="flex flex-col items-center gap-3.5">
+          <div
+            className="font-black text-zinc-50 flex items-center justify-center gap-4"
+            style={{
+              fontSize: nameSize,
+              letterSpacing: '-0.05em',
+              lineHeight: 1,
+              textShadow: `0 4px 60px ${p.color}50`,
+            }}
+          >
+            <span
+              className="rounded-full shrink-0"
+              style={{
+                width: dotSize,
+                height: dotSize,
+                background: p.color,
+                boxShadow: `0 0 0 4px ${p.color}30`,
+              }}
+            />
+            <span>{p.nickname}</span>
+          </div>
+          <div className="inline-flex items-center px-3 py-1 rounded-full bg-white/[0.05] border border-white/[0.08] text-[11px] text-zinc-400 font-bold uppercase tracking-[0.06em]">
+            {ko.result.loserBadge}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
