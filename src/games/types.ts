@@ -16,9 +16,25 @@ export type ComputeResultInput = {
   chargeRatios?: Record<string, number>;
 };
 
+/**
+ * Pre-play timing data for `needsClientInput` games. Returned by
+ * `GameServerModule.prepareIntro` so socket.ts can broadcast `goAt`/`deadlineAt`
+ * before tap collection begins. Offsets are relative to wall-clock `startAt`.
+ */
+export type GameIntroTimings = {
+  goAtOffsetMs: number;
+  deadlineOffsetMs: number;
+  durationMs: number;
+};
+
 export type GameServerModule = {
   /** Deterministic given the same input. May be async (e.g. needs to load WASM). */
   computeResult(input: ComputeResultInput): ReplayPayload | Promise<ReplayPayload>;
+  /**
+   * Optional. For `needsClientInput` games (reaction), produces the deterministic
+   * intro timings from a seed. Pure function — no Date.now()/global RNG.
+   */
+  prepareIntro?(args: { seed: number }): GameIntroTimings;
 };
 
 // Technical metadata only. Display label lives in `ko.games[id]` (i18n).
@@ -58,7 +74,7 @@ export const GAME_META = {
     estimatedSeconds: 6,
     needsClientInput: true,
     needsPreCharge: false,
-    enabled: false,
+    enabled: true,
   },
 } as const;
 

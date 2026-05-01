@@ -13,6 +13,8 @@ import { ChargePhase } from '@/components/ChargePhase';
 import { ResultScreen } from '@/components/ResultScreen';
 import { MarbleRenderer } from '@/games/marble/Renderer';
 import type { SimulationResult } from '@/games/marble/sim';
+import { ReactionRenderer } from '@/games/reaction/Renderer';
+import type { ReactionReplayData } from '@/games/reaction/server';
 import { ROOM, UI } from '@/lib/constants';
 import type { JoinAck } from '@/lib/protocol';
 
@@ -210,16 +212,20 @@ export default function RoomClient({
   const inCharging = state?.status === 'charging';
   const inResult = state?.status === 'result';
   const replayPlayed = !!gameStart;
-  // Keep the marble screen visible after the server flips to 'result' until the
-  // user taps through. Players who joined late (no gameStart) skip straight to
-  // the result screen since there's no replay to wait on.
-  const showGame =
-    replayPlayed && state?.status !== 'lobby' && state?.status !== 'charging' && (!inResult || !resultAcked);
-  const showResult = inResult && (resultAcked || !replayPlayed);
-  const showResultPrompt = inResult && replayPlayed && !resultAcked;
   // marble and marble-cheer share the same renderer (same SimulationResult shape).
   const isMarbleLikeGame =
     !!gameStart && (gameStart.gameId === 'marble' || gameStart.gameId === 'marble-cheer');
+  const isReactionGame = !!gameStart && gameStart.gameId === 'reaction';
+  // Marble keeps the renderer visible past the result flip so its replay frames
+  // can finish, gated by a tap-to-continue prompt. Reaction has nothing to watch
+  // after the deadline — surface the result screen immediately.
+  const showGame =
+    replayPlayed &&
+    state?.status !== 'lobby' &&
+    state?.status !== 'charging' &&
+    (!inResult || (!resultAcked && !isReactionGame));
+  const showResult = inResult && (resultAcked || !replayPlayed || isReactionGame);
+  const showResultPrompt = inResult && replayPlayed && !resultAcked && !isReactionGame;
 
   function handleReplay() {
     setReplayStartAt(Date.now() + UI.REPLAY_LEAD_MS);
@@ -247,9 +253,23 @@ export default function RoomClient({
         </div>
       )}
 
-      {showCountdown && gameStart && <Countdown startAt={effectiveStartAt} />}
+      {showGame && gameStart && isReactionGame && (
+        <div className="fixed inset-0 z-20">
+          <ReactionRenderer
+            key={effectiveStartAt}
+            startAt={effectiveStartAt}
+            goAt={(gameStart.replay as ReactionReplayData).goAt}
+            deadlineAt={(gameStart.replay as ReactionReplayData).deadlineAt}
+            durationMs={gameStart.durationMs}
+            players={gameStart.players}
+            myPlayerToken={myToken}
+          />
+        </div>
+      )}
 
-      {showResult && <ResultScreen onReplay={handleReplay} />}
+      {showCountdown && gameStart && !isReactionGame && <Countdown startAt={effectiveStartAt} />}
+
+      {showResult && <ResultScreen onReplay={isReactionGame ? undefined : handleReplay} />}
 
       {showResultPrompt && (
         <button

@@ -2,6 +2,7 @@ import type { Server as IOServer, Socket } from 'socket.io';
 import {
   addPlayer,
   clearCharge,
+  clearReaction,
   findPlayerBySocket,
   getRoom,
   isHostToken,
@@ -9,7 +10,7 @@ import {
   touch,
   type RoomState,
 } from './rooms';
-import { runGame } from './game-runner';
+import { prepareGameIntro, runGame } from './game-runner';
 import { ko } from '../lib/i18n';
 import { GAME, NICKNAME, ROOM } from '../lib/constants';
 import { GAME_META } from '../games/types';
@@ -115,7 +116,9 @@ export function attachSocketHandlers(io: IO) {
       if (room.status === 'charging' || room.status === 'countdown' || room.status === 'playing') return;
 
       const meta = GAME_META[room.gameId];
-      if (meta.needsPreCharge) {
+      if (meta.needsClientInput) {
+        await runReactionRound(io, room);
+      } else if (meta.needsPreCharge) {
         startChargingPhase(io, room);
       } else {
         await runRound(io, room, /*chargeRatios*/ undefined);
@@ -133,11 +136,27 @@ export function attachSocketHandlers(io: IO) {
       if (safe > prev) room.charge.counts.set(player.playerToken, safe);
     });
 
+    socket.on('reaction:tap', () => {
+      // Capture arrival time IMMEDIATELY — this is the source of truth for ranking.
+      const arrivalAt = Date.now();
+      const room = currentRoomId ? getRoom(currentRoomId) : null;
+      if (!room || room.gameId !== 'reaction' || !room.reaction) return;
+      if (room.status !== 'playing') return;
+      if (arrivalAt > room.reaction.deadlineAt) return;
+      const player = findPlayerBySocket(room, socket.id);
+      if (!player) return;
+      // First tap only — server-authoritative.
+      if (room.reaction.firstTaps.has(player.playerToken)) return;
+      const offset = arrivalAt - room.reaction.goAt;
+      room.reaction.firstTaps.set(player.playerToken, offset);
+    });
+
     socket.on('reset', () => {
       const guard = requireHost(currentRoomId, socket);
       if (!guard.ok) return;
       const { room } = guard;
       clearCharge(room);
+      clearReaction(room);
       room.status = 'lobby';
       room.currentRound = undefined;
       touch(room);
@@ -210,6 +229,112 @@ function startChargingPhase(io: IO, room: RoomState) {
   io.to(room.id).emit('charge:start', { endsAt });
   // Send an immediate empty state so clients render gauges from t=0 without a 250ms gap.
   io.to(room.id).emit('charge:state', { totals: {}, cap: GAME.CHARGE_TAP_CAP });
+}
+
+/**
+ * Reaction game round: client-input game where ranking is computed AFTER play.
+ * Flow:
+ *   1. countdown (3s) — clients render "준비…" via the renderer's startAt gate
+ *   2. wait until goAt (seed-derived 1.5..3.5s after startAt) — "지금!" phase
+ *   3. accept `reaction:tap` until deadlineAt; server-arrival time = ranking truth
+ *   4. after deadline + REACTION_TAIL_MS, build tapOffsets and call computeResult
+ *
+ * Note: unlike marble, the broadcast game:start sends an *intro-only* replay
+ * payload (`{ goAt, deadlineAt }`). The final ranking arrives via game:result.
+ */
+async function runReactionRound(io: IO, room: RoomState) {
+  const connectedPlayers = [...room.players.values()].filter((p) => p.connected);
+  if (connectedPlayers.length < GAME.MIN_PLAYERS) return;
+
+  const seed = (Math.random() * 0x7fffffff) | 0;
+  const intro = prepareGameIntro({ gameId: 'reaction', seed });
+  if (!intro) {
+    console.error('reaction game has no prepareIntro');
+    return;
+  }
+
+  const startAt = Date.now() + GAME.COUNTDOWN_MS;
+  const goAt = startAt + intro.goAtOffsetMs;
+  const deadlineAt = goAt + GAME.REACTION_DEADLINE_MS;
+
+  // Set status=countdown and stash a placeholder replay so publicRoomState carries
+  // intro data for mid-play reconnects via the `currentRound.replay` channel.
+  room.status = 'countdown';
+  const introReplay = {
+    durationMs: intro.durationMs,
+    ranking: [] as string[],
+    losers: [] as string[],
+    data: { goAt, deadlineAt },
+  };
+  room.currentRound = { gameId: 'reaction', seed, startAt, replay: introReplay };
+
+  // Schedule final result computation. Stored on room so reset() can cancel it.
+  const finishTimer = setTimeout(async () => {
+    if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
+    if (!room.reaction) return;
+
+    // Use the snapshot from broadcast time so the result ranking matches the players
+    // clients saw on `game:start`. Mid-round disconnects keep their slot — they just
+    // end up as non-tappers if they didn't tap before dropping.
+    const tapOffsets: Record<string, number | null> = {};
+    for (const p of connectedPlayers) {
+      if (p.manual) {
+        tapOffsets[p.playerToken] = null;
+      } else {
+        tapOffsets[p.playerToken] = room.reaction.firstTaps.get(p.playerToken) ?? null;
+      }
+    }
+
+    let replay;
+    try {
+      replay = await runGame({
+        gameId: 'reaction',
+        seed,
+        players: connectedPlayers,
+        loserCount: room.loserCount,
+        tapOffsets,
+      });
+    } catch (err) {
+      console.error('reaction runGame failed', err);
+      clearReaction(room);
+      room.status = 'lobby';
+      room.currentRound = undefined;
+      io.to(room.id).emit('state', publicRoomState(room));
+      return;
+    }
+
+    // Preserve goAt/deadlineAt in the final replay.data so late observers can still
+    // anchor their UI. computeResult set offsets, but we need wall-clock values here.
+    replay.data = { goAt, deadlineAt };
+    room.currentRound = { gameId: 'reaction', seed, startAt, replay };
+    clearReaction(room);
+    room.status = 'result';
+    io.to(room.id).emit('state', publicRoomState(room));
+    io.to(room.id).emit('game:result', { ranking: replay.ranking, losers: replay.losers });
+  }, deadlineAt + GAME.REACTION_TAIL_MS - Date.now());
+
+  room.reaction = { goAt, deadlineAt, firstTaps: new Map(), finishTimer };
+  touch(room);
+  io.to(room.id).emit('state', publicRoomState(room));
+  io.to(room.id).emit('countdown', { startAt });
+  io.to(room.id).emit('game:start', {
+    gameId: 'reaction',
+    seed,
+    startAt,
+    durationMs: intro.durationMs,
+    replay: { goAt, deadlineAt },
+    players: connectedPlayers.map((p) => ({
+      playerToken: p.playerToken,
+      nickname: p.nickname,
+      color: p.color,
+    })),
+  });
+
+  setTimeout(() => {
+    if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
+    room.status = 'playing';
+    io.to(room.id).emit('state', publicRoomState(room));
+  }, GAME.COUNTDOWN_MS);
 }
 
 /**

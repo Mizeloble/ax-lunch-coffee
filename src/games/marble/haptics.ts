@@ -38,4 +38,10 @@ export const haptics = {
   chargeTap(): void {
     vibrate(8);
   },
+  reactionGo(): void {
+    vibrate(40);
+  },
+  reactionFalseStart(): void {
+    vibrate([0, 30, 30, 30]);
+  },
 };

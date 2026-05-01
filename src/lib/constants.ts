@@ -25,6 +25,16 @@ export const GAME = {
   CHARGE_TAP_CAP: 50,
   /** Default charge ratio for manual (no-phone) players. */
   CHARGE_MANUAL_DEFAULT: 0.5,
+  /** Reaction game: minimum offset before "GO!" before the goAt mark. */
+  REACTION_PRE_GO_MIN_MS: 1500,
+  /** Reaction game: maximum offset before "GO!". seed picks deterministically in [MIN, MAX]. */
+  REACTION_PRE_GO_MAX_MS: 3500,
+  /** Reaction game: window after goAt to accept taps. */
+  REACTION_DEADLINE_MS: 1500,
+  /** Reaction game: anything below this is treated as a false start (catches reflex 0..50ms guesses). */
+  REACTION_MIN_HUMAN_RT_MS: 80,
+  /** Reaction game: post-deadline buffer before broadcasting result, lets last in-flight tap arrive. */
+  REACTION_TAIL_MS: 600,
 } as const;
 
 export const NICKNAME = {

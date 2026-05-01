@@ -34,6 +34,16 @@ export type ChargeState = {
   finishTimer: NodeJS.Timeout;
 };
 
+export type ReactionState = {
+  /** Wall-clock time when "지금!" reveals. */
+  goAt: number;
+  /** Wall-clock cutoff for accepted taps. */
+  deadlineAt: number;
+  /** playerToken -> first-tap server-arrival offset (ms relative to goAt; negative = false start). */
+  firstTaps: Map<string, number>;
+  finishTimer: NodeJS.Timeout;
+};
+
 export type RoomState = {
   id: string;
   hostToken: string;
@@ -44,6 +54,7 @@ export type RoomState = {
   players: Map<string, Player>; // keyed by playerToken
   currentRound?: { gameId: GameId; seed: number; startAt: number; replay: ReplayPayload };
   charge?: ChargeState; // present only while status === 'charging'
+  reaction?: ReactionState; // present only during a `reaction` round (countdown + playing)
   lastActivityAt: number;
   cleanupTimer?: NodeJS.Timeout;
 };
@@ -53,6 +64,12 @@ export function clearCharge(room: RoomState) {
   clearInterval(room.charge.tickTimer);
   clearTimeout(room.charge.finishTimer);
   room.charge = undefined;
+}
+
+export function clearReaction(room: RoomState) {
+  if (!room.reaction) return;
+  clearTimeout(room.reaction.finishTimer);
+  room.reaction = undefined;
 }
 
 // IMPORTANT: Next.js API routes (Turbopack-bundled) and the Socket.IO handler (loaded by tsx)
@@ -195,7 +212,16 @@ export function publicRoomState(room: RoomState) {
           gameId: room.currentRound.gameId,
           startAt: room.currentRound.startAt,
           durationMs: room.currentRound.replay.durationMs,
+          // Exposed for mid-play reconnects (reaction needs goAt/deadlineAt to render).
+          // For marble, `data` is large frame data — only include intro-only payloads.
+          replay: shouldExposeReplayData(room) ? room.currentRound.replay.data : undefined,
         }
       : undefined,
   };
+}
+
+function shouldExposeReplayData(room: RoomState): boolean {
+  // Only reaction's replay.data is small intro-only metadata. Marble's frames stay
+  // out of state broadcasts to keep them light.
+  return room.gameId === 'reaction';
 }

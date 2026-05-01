@@ -118,6 +118,7 @@ export const ko = {
     reaction: '동시탭 반응속도',
     physicsEstimate: (s: number) => `~${s}초 · 물리 기반`,
     cheerEstimate: (s: number) => `~${s}초 · 응원 충전`,
+    reactionEstimate: (s: number) => `~${s}초 · 반응 속도`,
   },
   gameIntros: {
     marble: [
@@ -161,6 +162,18 @@ export const ko = {
     paneMyView: '👁 내 시점',
     loserExclamation: '☕ 꼴찌!',
     loserConfirmedBadge: '꼴찌 결정!',
+  },
+  reaction: {
+    ready: '준비…',
+    readySub: '노란불에 탭!',
+    go: '지금!',
+    goSub: '탭!',
+    falseStart: '너무 빨라요!',
+    tabulating: '결과 집계 중…',
+    myTime: (ms: number) => `${ms}ms`,
+    tapHint: '여기를 탭',
+    waitingTap: '탭 안 했어요',
+    youTapped: '기록됨',
   },
   dev: {
     botNames: ['봇1', '봇2', '봇3', '봇4', '봇5'] as const,

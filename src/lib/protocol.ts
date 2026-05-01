@@ -22,7 +22,13 @@ export type PublicRoomState = {
   gameId: GameId;
   loserCount: number;
   players: PublicPlayer[];
-  currentRound?: { gameId: GameId; startAt: number; durationMs: number };
+  currentRound?: {
+    gameId: GameId;
+    startAt: number;
+    durationMs: number;
+    /** Game-specific intro data exposed for mid-play reconnects (e.g. reaction's goAt/deadlineAt). */
+    replay?: unknown;
+  };
 };
 
 export type GameStartPayload = {
@@ -77,6 +83,8 @@ export type ClientToServerEvents = {
   reset: () => void;
   /** Charge phase: client sends cumulative tap count (idempotent). */
   'charge:tick': (payload: { count: number }) => void;
+  /** Reaction game: tap signal. No payload — server uses arrival time as the source of truth. */
+  'reaction:tap': () => void;
   'host:addPlayer': (
     payload: { nickname: string },
     ack: (res: AddPlayerAck) => void,

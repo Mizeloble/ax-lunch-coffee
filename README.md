@@ -5,7 +5,7 @@
 호스트가 방을 열고 QR 코드를 띄우면 다른 사람들이 폰 카메라로 스캔해서 입장 → 게임 한 판 → 패자가 커피 ☕️.
 
 - **운영 배포**: [ax-lunch-coffee.fly.dev](https://ax-lunch-coffee.fly.dev) (Fly.io · 도쿄 nrt)
-- **상태**: v1 출시 — 마블 레이스만 활성. v1.1에서 슬롯 추가 예정.
+- **상태**: v1.4 진행 — 마블 / 응원 마블 / 반응속도 활성. 슬롯·탈락 룰렛은 후속.
 
 ## 게임
 
@@ -13,9 +13,9 @@
 | --- | --- | --- | --- |
 | 🏁 marble | 마블 레이스 | ~35초 | **활성 (v1)** |
 | 📣 marble-cheer | 응원 마블 레이스 | ~40초 | **활성 (v1.1)** — 시작 전 5초 탭 충전이 마블 물리에 미세 반영 |
+| ⚡ reaction | 동시탭 반응속도 | ~8초 | **활성 (v1.4)** — 회색 "준비…" → 노란 "지금!" 동시 탭, 가장 빠른 사람이 1등 |
 | 🎰 slot | 슬롯머신 룰렛 | ~8초 | 비활성 (v1.2) |
 | 🎯 elimination | 탈락 룰렛 | ~20초 | 비활성 (v1.3) |
-| ⚡ reaction | 동시탭 반응속도 | ~6초 | 비활성 (v1.4) |
 
 활성 여부는 [`src/games/types.ts`](src/games/types.ts)의 `GAME_META`에서 단일 진실. 카드는 모두 보이지만 비활성은 잠금.
 
@@ -113,11 +113,13 @@ fly deploy
 - [ ] 원형 스피너 렌더 + 라운드별 재생
 - [ ] 인원수에 따른 라운드 시간 튜닝
 
-### v1.4 — 동시탭 반응속도 ⚡
+### ✅ v1.4 — 동시탭 반응속도 ⚡
 
-- [ ] `tapOffsets` 클라 입력 수집 (최초의 `needsClientInput` 게임)
-- [ ] `startAt` 동기화로 부정출발 처리
-- [ ] 폰 시계 편차 케이스 검증
+- [x] `tapOffsets` 클라 입력 수집 (최초의 `needsClientInput` 게임) — payload는 인자 없는 `reaction:tap`, 서버 도착 시각만 진실
+- [x] `startAt` 동기화 + 부정출발 처리 — `goAt`은 seed로 결정(1.5~3.5초), 80ms 미만 탭은 false start
+- [x] 폰 시계 편차 면역 — 클라 timestamp를 신뢰하지 않고 서버가 `Date.now() - goAt`로 offset 계산
+- [x] manual(폰 없는) 참가자는 자동 non-tapper 처리 (운빨 회피)
+- [x] 백그라운드 탭은 `document.visibilityState` 가드로 입력 무시
 
 ### 백로그 (우선순위 미정)
 

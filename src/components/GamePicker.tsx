@@ -41,7 +41,11 @@ export function GamePicker({
               {ko.games[id]}
             </div>
             <div className={clsx('text-[11px] mt-0.5', isSelected ? 'text-amber-200/80' : 'text-zinc-400')}>
-              {m.needsPreCharge ? ko.games.cheerEstimate(m.estimatedSeconds) : ko.games.physicsEstimate(m.estimatedSeconds)}
+              {m.needsClientInput
+                ? ko.games.reactionEstimate(m.estimatedSeconds)
+                : m.needsPreCharge
+                  ? ko.games.cheerEstimate(m.estimatedSeconds)
+                  : ko.games.physicsEstimate(m.estimatedSeconds)}
             </div>
           </button>
         );
