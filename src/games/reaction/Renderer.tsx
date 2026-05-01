@@ -37,6 +37,10 @@ export function ReactionRenderer({
   // surface this immediately so the user sees their effort acknowledged.
   const [myOffsetMs, setMyOffsetMs] = useState<number | null>(null);
   const [falseStartFlash, setFalseStartFlash] = useState(0);
+  // Sticks for the rest of the round once you false-start. Used to keep a
+  // persistent "위반 · 대기" badge so users don't think the game is bugged
+  // when later taps stop responding.
+  const [falseStartLocked, setFalseStartLocked] = useState(false);
   const tappedRef = useRef(false);
 
   // RAF tick (drives phase transition + countdown numerals)
@@ -50,6 +54,20 @@ export function ReactionRenderer({
     return () => cancelAnimationFrame(raf);
   }, []);
 
+  // 3·2·1 haptic ticks at fixed offsets from startAt. Offsets sit safely below
+  // REACTION_PRE_GO_MIN_MS (1500ms) so the silence between the last tick and GO
+  // varies 300–2300ms — preserves the "you don't know when GO comes" anti-cheat.
+  // No haptic fires on GO itself (iOS Safari lacks navigator.vibrate, so a GO
+  // pulse would advantage Android players).
+  useEffect(() => {
+    const now = Date.now();
+    const timers = [400, 800, 1200]
+      .map((off) => startAt + off)
+      .filter((fireAt) => fireAt > now + 50)
+      .map((fireAt) => window.setTimeout(() => haptics.countdownTick(), fireAt - now));
+    return () => timers.forEach((id) => window.clearTimeout(id));
+  }, [startAt]);
+
   function handleTap() {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     if (tappedRef.current) return;
@@ -60,6 +78,7 @@ export function ReactionRenderer({
       // false start — visual + haptic, no offset surfaced
       haptics.reactionFalseStart();
       setFalseStartFlash((k) => k + 1);
+      setFalseStartLocked(true);
       // Still emit so the server records this player's first input as a false start.
       // Server uses arrival time, not our `tapAt`, so we don't send a timestamp.
       getSocket().emit('reaction:tap');
@@ -74,10 +93,12 @@ export function ReactionRenderer({
 
   const phase: Phase = now < goAt ? 'ready' : now < deadlineAt ? 'go' : 'tabulating';
 
-  // Soft preview countdown during ready phase (no exact reveal — just "곧" sense)
-  const readyTotalMs = Math.max(1, goAt - startAt);
-  const readyElapsedMs = Math.max(0, Math.min(readyTotalMs, now - startAt));
-  const readyProgress = readyElapsedMs / readyTotalMs;
+  // Saturating bar — fills to ~85% by REACTION_PRE_GO_MIN_MS (1500ms) and creeps
+  // asymptotically toward 100% afterwards. The visual gap between "almost full"
+  // and "actually GO" is imperceptible, so the bar shows "round in progress"
+  // without leaking when GO will fire.
+  const readyElapsedMs = Math.max(0, now - startAt);
+  const readyProgress = 1 - Math.exp(-readyElapsedMs / 800);
 
   return (
     <main
@@ -89,7 +110,7 @@ export function ReactionRenderer({
       <button
         type="button"
         onPointerDown={handleTap}
-        disabled={phase === 'tabulating'}
+        disabled={phase === 'tabulating' || falseStartLocked}
         aria-label={ko.reaction.tapHint}
         className="absolute inset-0 flex flex-col items-center justify-center text-center transition-colors duration-100"
         style={{
@@ -99,16 +120,10 @@ export function ReactionRenderer({
               : phase === 'tabulating'
                 ? '#18181b'
                 : '#27272a',
+          opacity: falseStartLocked ? 0.45 : 1,
         }}
       >
-        {phase === 'ready' && (
-          <ReadyView
-            elapsed={readyElapsedMs}
-            progress={readyProgress}
-            durationMs={durationMs}
-            startAt={startAt}
-          />
-        )}
+        {phase === 'ready' && <ReadyView progress={readyProgress} />}
         {phase === 'go' && <GoView myOffsetMs={myOffsetMs} />}
         {phase === 'tabulating' && <TabulatingView />}
 
@@ -131,6 +146,22 @@ export function ReactionRenderer({
         )}
       </button>
 
+      {/* Persistent false-start banner — sits above the (now-disabled) tap surface
+          for the rest of the round so users know their input is locked and the
+          ranking is still TBD (an even-earlier false-starter could overtake). */}
+      {falseStartLocked && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-center px-6 pt-[max(env(safe-area-inset-top),12px)]">
+          <div className="rounded-2xl bg-rose-600/95 px-5 py-3 text-center text-white shadow-2xl ring-1 ring-rose-300/40 backdrop-blur">
+            <div className="text-sm font-black tracking-tight">
+              {ko.reaction.falseStartLockedTitle}
+            </div>
+            <div className="mt-1 text-[11px] font-medium leading-snug text-rose-50/90">
+              {ko.reaction.falseStartLockedRule}
+            </div>
+          </div>
+        </div>
+      )}
+
       <style jsx>{`
         @keyframes reaction-flash {
           0% { opacity: 0.9; }
@@ -147,14 +178,7 @@ export function ReactionRenderer({
   );
 }
 
-function ReadyView({
-  progress,
-}: {
-  elapsed: number;
-  progress: number;
-  durationMs: number;
-  startAt: number;
-}) {
+function ReadyView({ progress }: { progress: number }) {
   return (
     <>
       <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400/80 font-bold">

@@ -143,6 +143,7 @@ export const ko = {
     reaction: [
       '"지금!" 신호가 뜨면 가장 빨리 탭',
       '느린 N명이 커피값',
+      '미리 누르면 가장 일찍 누른 순서로 꼴등',
     ],
   },
   charge: {
@@ -169,6 +170,8 @@ export const ko = {
     go: '지금!',
     goSub: '탭!',
     falseStart: '너무 빨라요!',
+    falseStartLockedTitle: '출발 위반 · 결과 대기',
+    falseStartLockedRule: '더 일찍 누른 사람이 있으면 꼴등을 면할 수 있어요',
     tabulating: '결과 집계 중…',
     myTime: (ms: number) => `${ms}ms`,
     tapHint: '여기를 탭',
