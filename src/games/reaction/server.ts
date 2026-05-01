@@ -5,14 +5,22 @@ import { GAME } from '../../lib/constants';
 /**
  * Intro data baked into `replay.data` so clients (incl. mid-play reconnects)
  * know exactly when "지금!" lights up and when the tap window closes.
+ *
+ * `offsets` is empty during the intro broadcast and populated in the final
+ * result broadcast so the result screen can display each player's reaction time.
+ *   - positive number = ms after goAt (valid tap)
+ *   - negative number = ms before goAt (false start)
+ *   - null = no tap recorded (manual / disconnected mid-round)
  */
 export type ReactionReplayData = {
   goAt: number;
   deadlineAt: number;
+  offsets: Record<string, number | null>;
 };
 
 // Mulberry32 — small fast deterministic PRNG. Seed-only; no global state.
-function mulberry32(seed: number) {
+// Exported so socket.ts can simulate bot reaction times deterministically per round.
+export function mulberry32(seed: number) {
   let t = seed >>> 0;
   return () => {
     t = (t + 0x6d2b79f5) >>> 0;
@@ -87,10 +95,12 @@ export const reactionServer: GameServerModule = {
 
     const intro = prepareReactionIntro(seed);
     const data: ReactionReplayData = {
-      // socket.ts overwrites these with absolute wall-clock values before broadcast.
-      // Stored here so computeResult is fully self-describing for tests.
+      // socket.ts overwrites goAt/deadlineAt with absolute wall-clock values before
+      // broadcast. Stored as offsets here so computeResult is fully self-describing
+      // for tests. `offsets` flows straight through and is what the result screen reads.
       goAt: intro.goAtOffsetMs,
       deadlineAt: intro.deadlineOffsetMs,
+      offsets: tapOffsets ?? {},
     };
 
     return {

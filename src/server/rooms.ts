@@ -15,6 +15,9 @@ export type Player = {
   graceTimer?: NodeJS.Timeout;
   color: string;
   manual: boolean; // host-added (no device); freely removable by host
+  // Dev-only: seeded bot. Treated as `manual` for client UI but the server
+  // simulates inputs for them (e.g. fake reaction taps) instead of leaving them idle.
+  bot?: boolean;
 };
 
 export type ReplayPayload = {
@@ -117,6 +120,7 @@ function seedDevBots(room: RoomState) {
       connected: true,
       color,
       manual: true,
+      bot: true,
     });
   }
 }

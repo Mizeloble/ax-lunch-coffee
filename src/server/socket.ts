@@ -15,6 +15,7 @@ import { ko } from '../lib/i18n';
 import { GAME, NICKNAME, ROOM } from '../lib/constants';
 import { GAME_META } from '../games/types';
 import type { ClientToServerEvents, ServerToClientEvents } from '../lib/protocol';
+import { mulberry32 } from '../games/reaction/server';
 
 type IO = IOServer<ClientToServerEvents, ServerToClientEvents>;
 
@@ -264,7 +265,9 @@ async function runReactionRound(io: IO, room: RoomState) {
     durationMs: intro.durationMs,
     ranking: [] as string[],
     losers: [] as string[],
-    data: { goAt, deadlineAt },
+    // offsets stays empty until the round ends — ResultScreen uses presence of
+    // entries (not the field itself) to decide whether to render ms badges.
+    data: { goAt, deadlineAt, offsets: {} as Record<string, number | null> },
   };
   room.currentRound = { gameId: 'reaction', seed, startAt, replay: introReplay };
 
@@ -278,7 +281,10 @@ async function runReactionRound(io: IO, room: RoomState) {
     // end up as non-tappers if they didn't tap before dropping.
     const tapOffsets: Record<string, number | null> = {};
     for (const p of connectedPlayers) {
-      if (p.manual) {
+      if (p.bot) {
+        // Dev-only bot: deterministic 200–400ms reaction so result screens look realistic.
+        tapOffsets[p.playerToken] = simulateBotReaction(seed, p.playerToken);
+      } else if (p.manual) {
         tapOffsets[p.playerToken] = null;
       } else {
         tapOffsets[p.playerToken] = room.reaction.firstTaps.get(p.playerToken) ?? null;
@@ -304,8 +310,10 @@ async function runReactionRound(io: IO, room: RoomState) {
     }
 
     // Preserve goAt/deadlineAt in the final replay.data so late observers can still
-    // anchor their UI. computeResult set offsets, but we need wall-clock values here.
-    replay.data = { goAt, deadlineAt };
+    // anchor their UI. computeResult set offsets relative to startAt; here we
+    // overwrite with absolute wall-clock and carry tapOffsets through so the
+    // result screen can show each player's reaction time.
+    replay.data = { goAt, deadlineAt, offsets: tapOffsets };
     room.currentRound = { gameId: 'reaction', seed, startAt, replay };
     clearReaction(room);
     room.status = 'result';
@@ -322,7 +330,8 @@ async function runReactionRound(io: IO, room: RoomState) {
     seed,
     startAt,
     durationMs: intro.durationMs,
-    replay: { goAt, deadlineAt },
+    // offsets stays empty here — populated on the post-round state broadcast.
+    replay: { goAt, deadlineAt, offsets: {} as Record<string, number | null> },
     players: connectedPlayers.map((p) => ({
       playerToken: p.playerToken,
       nickname: p.nickname,
@@ -448,4 +457,19 @@ function sanitizeNickname(raw: unknown): string | null {
   const t = raw.trim();
   if (t.length < 1 || t.length > NICKNAME.MAX_LENGTH) return null;
   return t;
+}
+
+/**
+ * Dev-only deterministic bot reaction time. Mixes round seed with token hash so:
+ *  - same seed + same player → same offset within a round (replayable)
+ *  - different rounds (different seeds) → different offsets (not boring)
+ *  - different bots in the same round → different offsets (varied result spread)
+ * Range 200–400ms keeps bots in the realistic-human bucket so they neither
+ * dominate nor always lose in dev testing.
+ */
+function simulateBotReaction(seed: number, token: string): number {
+  let h = 0;
+  for (let i = 0; i < token.length; i++) h = (h * 31 + token.charCodeAt(i)) | 0;
+  const rng = mulberry32(seed ^ h);
+  return 200 + Math.floor(rng() * 200);
 }

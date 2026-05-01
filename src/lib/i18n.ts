@@ -177,6 +177,9 @@ export const ko = {
     tapHint: '여기를 탭',
     waitingTap: '탭 안 했어요',
     youTapped: '기록됨',
+    resultMs: (ms: number) => `${ms}ms`,
+    resultFalseStart: (ms: number) => `−${Math.abs(ms)}ms · 위반`,
+    resultNoTap: '미탭',
   },
   dev: {
     botNames: ['봇1', '봇2', '봇3', '봇4', '봇5'] as const,

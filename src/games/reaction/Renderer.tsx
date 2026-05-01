@@ -173,6 +173,15 @@ export function ReactionRenderer({
           75% { opacity: 1; transform: translate(-50%, 0); }
           100% { opacity: 0; transform: translate(-50%, -4px); }
         }
+        @keyframes reaction-go-whiteflash {
+          0% { opacity: 0.85; }
+          100% { opacity: 0; }
+        }
+        @keyframes reaction-go-pulse {
+          0% { transform: scale(0.88); opacity: 0; }
+          55% { transform: scale(1.06); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
       `}</style>
     </main>
   );
@@ -205,8 +214,15 @@ function ReadyView({ progress }: { progress: number }) {
 function GoView({ myOffsetMs }: { myOffsetMs: number | null }) {
   return (
     <>
+      {/* Brief white flash at GO. Pure CSS — fires once on mount because GoView
+          is conditionally rendered only when phase transitions to 'go'. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 animate-[reaction-go-whiteflash_220ms_ease-out_forwards]"
+        style={{ background: 'rgba(255,255,255,0.9)' }}
+      />
       <div
-        className="font-black text-zinc-950 leading-none"
+        className="font-black text-zinc-950 leading-none animate-[reaction-go-pulse_320ms_cubic-bezier(0.34,1.56,0.64,1)_both]"
         style={{ fontSize: 120, letterSpacing: '-0.06em' }}
       >
         {ko.reaction.go}

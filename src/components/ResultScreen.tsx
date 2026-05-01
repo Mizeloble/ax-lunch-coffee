@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
 import { useRoomStore } from '@/store/room-store';
 import { getSocket } from '@/lib/socket-client';
+import { GAME } from '@/lib/constants';
+import type { ReactionReplayData } from '@/games/reaction/server';
 import clsx from 'clsx';
 
 export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
@@ -105,6 +107,14 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
 
   const canReplay = !!gameStart && !!onReplay;
 
+  // Reaction game: pull per-player tap offsets from the post-round state broadcast.
+  // Empty during the intro broadcast — only populated when the round finishes.
+  const reactionOffsets =
+    state.gameId === 'reaction'
+      ? (state.currentRound?.replay as ReactionReplayData | undefined)?.offsets
+      : undefined;
+  const showReactionMs = !!reactionOffsets && Object.keys(reactionOffsets).length > 0;
+
   function leaveRoom() {
     router.push('/');
   }
@@ -126,7 +136,10 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
           </span>
         </div>
 
-        <LoserBlock losers={losers} />
+        <LoserBlock
+          losers={losers}
+          offsets={showReactionMs ? reactionOffsets : undefined}
+        />
 
         <div
           className={clsx(
@@ -210,7 +223,11 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
 
         {/* Inline ranking (guest disclosure) */}
         {!isHost && showRanking && fullRanking.length > 0 && (
-          <RankingList ranking={fullRanking} myToken={myToken} />
+          <RankingList
+            ranking={fullRanking}
+            myToken={myToken}
+            offsets={showReactionMs ? reactionOffsets : undefined}
+          />
         )}
       </div>
 
@@ -222,7 +239,11 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
             <span className="text-zinc-600 transition-transform group-open:rotate-180">▾</span>
           </summary>
           <div className="border-t border-zinc-800 mt-3 pt-3">
-            <RankingList ranking={fullRanking} myToken={myToken} />
+            <RankingList
+            ranking={fullRanking}
+            myToken={myToken}
+            offsets={showReactionMs ? reactionOffsets : undefined}
+          />
           </div>
         </details>
       )}
@@ -232,8 +253,10 @@ export function ResultScreen({ onReplay }: { onReplay?: () => void } = {}) {
 
 function LoserBlock({
   losers,
+  offsets,
 }: {
   losers: { playerToken: string; nickname: string; color: string }[];
+  offsets?: Record<string, number | null>;
 }) {
   const n = losers.length;
   const nameSize = n === 1 ? 80 : n === 2 ? 56 : 44;
@@ -242,33 +265,52 @@ function LoserBlock({
 
   return (
     <div className="mt-9 flex flex-col items-center" style={{ gap: lineGap }}>
-      {losers.map((p) => (
-        <div key={p.playerToken} className="flex flex-col items-center gap-3.5">
-          <div
-            className="font-black text-zinc-50 flex items-center justify-center gap-4"
-            style={{
-              fontSize: nameSize,
-              letterSpacing: '-0.05em',
-              lineHeight: 1,
-              textShadow: `0 4px 60px ${p.color}50`,
-            }}
-          >
-            <span
-              className="rounded-full shrink-0"
+      {losers.map((p) => {
+        const offsetLabel = offsets ? formatReactionOffset(offsets[p.playerToken]) : null;
+        return (
+          <div key={p.playerToken} className="flex flex-col items-center gap-3.5">
+            <div
+              className="font-black text-zinc-50 flex items-center justify-center gap-4"
               style={{
-                width: dotSize,
-                height: dotSize,
-                background: p.color,
-                boxShadow: `0 0 0 4px ${p.color}30`,
+                fontSize: nameSize,
+                letterSpacing: '-0.05em',
+                lineHeight: 1,
+                textShadow: `0 4px 60px ${p.color}50`,
               }}
-            />
-            <span>{p.nickname}</span>
+            >
+              <span
+                className="rounded-full shrink-0"
+                style={{
+                  width: dotSize,
+                  height: dotSize,
+                  background: p.color,
+                  boxShadow: `0 0 0 4px ${p.color}30`,
+                }}
+              />
+              <span>{p.nickname}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="inline-flex items-center px-3 py-1 rounded-full bg-white/[0.05] border border-white/[0.08] text-[11px] text-zinc-400 font-bold uppercase tracking-[0.06em]">
+                {ko.result.loserBadge}
+              </div>
+              {offsetLabel && (
+                <div
+                  className={clsx(
+                    'inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold tabular-nums border',
+                    offsetLabel.tone === 'rose'
+                      ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+                      : offsetLabel.tone === 'dim'
+                        ? 'bg-zinc-500/10 border-zinc-700 text-zinc-500'
+                        : 'bg-white/[0.05] border-white/[0.08] text-zinc-300',
+                  )}
+                >
+                  {offsetLabel.text}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="inline-flex items-center px-3 py-1 rounded-full bg-white/[0.05] border border-white/[0.08] text-[11px] text-zinc-400 font-bold uppercase tracking-[0.06em]">
-            {ko.result.loserBadge}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -276,15 +318,18 @@ function LoserBlock({
 function RankingList({
   ranking,
   myToken,
+  offsets,
 }: {
   ranking: { playerToken: string; nickname: string; color: string }[];
   myToken: string | null;
+  offsets?: Record<string, number | null>;
 }) {
   return (
     <ul className="mt-3 w-full max-w-sm space-y-1.5">
       {ranking.map((p, i) => {
         const rank = i + 1;
         const isMe = p.playerToken === myToken;
+        const offsetLabel = offsets ? formatReactionOffset(offsets[p.playerToken]) : null;
         return (
           <li
             key={p.playerToken}
@@ -301,12 +346,54 @@ function RankingList({
               style={{ background: p.color }}
               aria-hidden
             />
-            <span className={clsx('truncate', isMe ? 'text-amber-300 font-bold' : 'text-zinc-200')}>
+            <span
+              className={clsx(
+                'flex-1 truncate',
+                isMe ? 'text-amber-300 font-bold' : 'text-zinc-200',
+              )}
+            >
               {p.nickname}
             </span>
+            {offsetLabel && (
+              <span
+                className={clsx(
+                  'shrink-0 text-xs font-bold tabular-nums',
+                  offsetLabel.tone === 'rose'
+                    ? 'text-rose-400'
+                    : offsetLabel.tone === 'dim'
+                      ? 'text-zinc-600'
+                      : isMe
+                        ? 'text-amber-200'
+                        : 'text-zinc-400',
+                )}
+              >
+                {offsetLabel.text}
+              </span>
+            )}
           </li>
         );
       })}
     </ul>
   );
+}
+
+/**
+ * Reaction game: classify a tap offset for display.
+ *  - null → "미탭" (dim)
+ *  - < REACTION_MIN_HUMAN_RT_MS (incl. negative) → "−180ms · 위반" (rose)
+ *  - otherwise → "217ms" (normal)
+ * Mirrors server-side classify() in src/games/reaction/server.ts so badge colors
+ * line up with bucket placement.
+ */
+function formatReactionOffset(
+  offset: number | null | undefined,
+): { text: string; tone: 'normal' | 'rose' | 'dim' } | null {
+  if (offset === undefined) return null;
+  if (offset === null) {
+    return { text: ko.reaction.resultNoTap, tone: 'dim' };
+  }
+  if (offset < GAME.REACTION_MIN_HUMAN_RT_MS) {
+    return { text: ko.reaction.resultFalseStart(offset), tone: 'rose' };
+  }
+  return { text: ko.reaction.resultMs(offset), tone: 'normal' };
 }
