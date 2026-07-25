@@ -17,7 +17,11 @@ export type QuizQuestion = {
   choices: readonly [string, string, string, string];
   correctIndex: 0 | 1 | 2 | 3;
   note?: string;
+  /** 1 = easy, 2 = normal, 3 = hard. Absent (e.g. nonsense pool) counts as 2. */
+  difficulty?: 1 | 2 | 3;
 };
+
+const DEFAULT_DIFFICULTY = 2;
 
 /**
  * Replay payload broadcast on game:start. Carries everything the client needs to
@@ -65,11 +69,18 @@ export type TriviaReplayData = {
 };
 
 /**
- * Draw `count` questions without replacement, spreading across categories so a
- * single round doesn't land 4-5 questions of the same flavor. A category may fill
- * at most ~60% of the round (3 of 5); if the pool is too small or too skewed to
- * honor that, a second pass fills the remaining slots ignoring the cap, so the
- * round is always `min(count, pool.length)` questions.
+ * Draw `count` questions without replacement, balancing two axes at once:
+ *
+ * - Category spread: a category may fill at most ~60% of the round (3 of 5), so a
+ *   single round doesn't land 4-5 questions of the same flavor.
+ * - Difficulty mix: each round targets a fixed quota — for 5 questions that's
+ *   2 easy / 2 normal / 1 hard — so one round isn't all "수도는?" and the next all
+ *   연도 암기. Untagged pools (nonsense) count everything as normal, which makes
+ *   the quota unfillable and falls through to the old category-only behavior.
+ *
+ * Fill order: (1) both quotas honored, (2) category cap only, (3) anything left.
+ * The round is always `min(count, pool.length)` questions, sorted easy → hard so
+ * the finale (2x multiplier) lands on the hardest question.
  */
 function pickQuestions(
   rng: () => number,
@@ -85,22 +96,55 @@ function pickQuestions(
   }
   const n = Math.min(count, pool.length);
   const cap = Math.max(1, Math.ceil(n * 0.6));
+
+  // Difficulty quotas: ~40% easy, ~20% hard, rest normal (5 → 2/2/1).
+  const easyQuota = Math.round(n * 0.4);
+  const hardQuota = Math.max(1, Math.floor(n * 0.2));
+  const quota: Record<1 | 2 | 3, number> = {
+    1: easyQuota,
+    2: n - easyQuota - hardQuota,
+    3: hardQuota,
+  };
+
   const picked: QuizQuestion[] = [];
   const pickedIds = new Set<string>();
   const perCategory = new Map<string, number>();
+  const perDifficulty: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
+
   for (const q of pool) {
     if (picked.length >= n) break;
-    const used = perCategory.get(q.category) ?? 0;
-    if (used >= cap) continue;
+    const usedCat = perCategory.get(q.category) ?? 0;
+    if (usedCat >= cap) continue;
+    const d = q.difficulty ?? DEFAULT_DIFFICULTY;
+    if (perDifficulty[d] >= quota[d]) continue;
     picked.push(q);
     pickedIds.add(q.id);
-    perCategory.set(q.category, used + 1);
+    perCategory.set(q.category, usedCat + 1);
+    perDifficulty[d] += 1;
+  }
+  for (const q of pool) {
+    if (picked.length >= n) break;
+    if (pickedIds.has(q.id)) continue;
+    const usedCat = perCategory.get(q.category) ?? 0;
+    if (usedCat >= cap) continue;
+    picked.push(q);
+    pickedIds.add(q.id);
+    perCategory.set(q.category, usedCat + 1);
   }
   for (const q of pool) {
     if (picked.length >= n) break;
     if (!pickedIds.has(q.id)) picked.push(q);
   }
-  return picked;
+
+  // Stable sort: easy first, hard last. Ties keep shuffle order (deterministic).
+  return picked
+    .map((q, i) => ({ q, i }))
+    .sort((a, b) => {
+      const da = a.q.difficulty ?? DEFAULT_DIFFICULTY;
+      const db = b.q.difficulty ?? DEFAULT_DIFFICULTY;
+      return da !== db ? da - db : a.i - b.i;
+    })
+    .map((e) => e.q);
 }
 
 function shuffleChoices(
