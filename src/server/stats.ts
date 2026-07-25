@@ -24,6 +24,10 @@ export type TrafficStats = {
   weeklyRooms: number[];
   /** 최근 30일 게임별 시작 라운드 수 */
   roundsByGame: Record<string, number>;
+  /** 최근 30일 방 생성 수 — 방당 평균의 분모 */
+  rooms30: number;
+  /** 최근 30일 참가자 입장 수 (신규만 — 재접속·dev 봇 제외) */
+  players30: number;
   fetchedAt: number;
 };
 
@@ -61,12 +65,14 @@ export async function getTrafficStats(): Promise<TrafficStats | null> {
     `sum(increase(bbk_rooms_created_total{app="${APP_NAME}"}[7d]${offset ? ` offset ${offset}` : ''}))`;
 
   try {
-    const [w0, w1, w2, w3, rounds] = await Promise.all([
+    const [w0, w1, w2, w3, rounds, rooms30, players30] = await Promise.all([
       promQuery(auth, rooms('')),
       promQuery(auth, rooms('7d')),
       promQuery(auth, rooms('14d')),
       promQuery(auth, rooms('21d')),
       promQuery(auth, `sum by (game) (increase(bbk_rounds_started_total{app="${APP_NAME}"}[30d]))`),
+      promQuery(auth, `sum(increase(bbk_rooms_created_total{app="${APP_NAME}"}[30d]))`),
+      promQuery(auth, `sum(increase(bbk_players_joined_total{app="${APP_NAME}"}[30d]))`),
     ]);
 
     const roundsByGame: Record<string, number> = {};
@@ -78,6 +84,8 @@ export async function getTrafficStats(): Promise<TrafficStats | null> {
     cache = {
       weeklyRooms: [scalarOf(w0), scalarOf(w1), scalarOf(w2), scalarOf(w3)],
       roundsByGame,
+      rooms30: scalarOf(rooms30),
+      players30: scalarOf(players30),
       fetchedAt: Date.now(),
     };
     return cache;

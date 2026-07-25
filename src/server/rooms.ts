@@ -239,6 +239,10 @@ export function addPlayer(
     manual: params.manual ?? false,
   };
   room.players.set(token, p);
+  // 신규 참가자만 카운트 (existing 분기 = 재접속, seedDevBots는 이 함수를 안 탐).
+  // 방당 평균 참가자(= 초대가 실제로 작동하는지)의 분자.
+  console.log(`[metric] player_joined room=${room.id} players=${room.players.size}`);
+  incCounter('bbk_players_joined_total');
   touch(room);
   return p;
 }

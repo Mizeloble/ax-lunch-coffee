@@ -49,12 +49,17 @@ function StatsBody({
 }: {
   stats: NonNullable<Awaited<ReturnType<typeof getTrafficStats>>>;
 }) {
-  const { weeklyRooms, roundsByGame, fetchedAt } = stats;
+  const { weeklyRooms, roundsByGame, rooms30, players30, fetchedAt } = stats;
   const { streak, stage } = gateStatus(weeklyRooms);
   const thisWeek = weeklyRooms[0];
   const pct = Math.min(100, Math.round((thisWeek / GATE.stage2Weekly) * 100));
   const maxWeek = Math.max(...weeklyRooms, GATE.stage2Weekly);
   const games = Object.entries(roundsByGame).sort(([, a], [, b]) => b - a);
+  // 방당 평균 — 참가자 카운터는 v2.15.0부터 쌓이므로 그 이전 방이 섞인 초기엔
+  // 실제보다 낮게 나온다(몇 주 지나면 자연 해소).
+  const rounds30 = Object.values(roundsByGame).reduce((a, b) => a + b, 0);
+  const avgPlayers = rooms30 > 0 && players30 > 0 ? (players30 / rooms30).toFixed(1) : null;
+  const avgRounds = rooms30 > 0 && rounds30 > 0 ? (rounds30 / rooms30).toFixed(1) : null;
   const updated = new Date(fetchedAt).toLocaleString('ko-KR', {
     month: 'numeric',
     day: 'numeric',
@@ -112,6 +117,27 @@ function StatsBody({
             </li>
           ))}
         </ul>
+      </section>
+
+      {/* 방당 평균 — 참가자(초대 작동 여부) · 라운드(재미 프록시) */}
+      <section className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          {ko.stats.avgTitle}
+        </h2>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-xl bg-zinc-800/60 px-4 py-3 text-center">
+            <div className="text-2xl font-black tabular-nums text-zinc-100">
+              {avgPlayers ? ko.stats.avgUnit(avgPlayers) : ko.stats.avgEmpty}
+            </div>
+            <div className="mt-0.5 text-xs text-zinc-500">{ko.stats.avgPlayers}</div>
+          </div>
+          <div className="rounded-xl bg-zinc-800/60 px-4 py-3 text-center">
+            <div className="text-2xl font-black tabular-nums text-zinc-100">
+              {avgRounds ? ko.stats.avgRoundsUnit(avgRounds) : ko.stats.avgEmpty}
+            </div>
+            <div className="mt-0.5 text-xs text-zinc-500">{ko.stats.avgRounds}</div>
+          </div>
+        </div>
       </section>
 
       {/* 게임별 라운드 */}

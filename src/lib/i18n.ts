@@ -389,6 +389,13 @@ export const ko = {
     ] as const,
     roundsTitle: '최근 30일 게임별 라운드',
     roundsEmpty: '아직 시작된 라운드가 없어요',
+    // 방당 평균 — 참가자(초대가 작동하나) · 라운드(재미있어서 "다시 하기"를 누르나)
+    avgTitle: '방당 평균 (최근 30일)',
+    avgPlayers: '참가자',
+    avgRounds: '라운드',
+    avgUnit: (n: string) => `${n}명`,
+    avgRoundsUnit: (n: string) => `${n}판`,
+    avgEmpty: '—',
     updatedAt: (t: string) => `${t} 기준 · 10분 캐시`,
     noToken: 'FLY_PROMETHEUS_TOKEN이 설정되지 않았어요 (fly secrets)',
     fetchFailed: '지표 조회에 실패했어요. 잠시 후 새로고침해주세요.',
