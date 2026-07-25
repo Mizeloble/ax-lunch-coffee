@@ -85,6 +85,38 @@ describe('buildQuizPlan', () => {
     }
   });
 
+  it('balances difficulty (2 easy / 2 normal / 1 hard) and orders easy → hard', () => {
+    // Tagged pool with plenty of each tier across several categories.
+    const tagged: QuizQuestion[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `t${String(i).padStart(2, '0')}`,
+      category: `cat-${i % 4}`,
+      question: `tagged ${i}?`,
+      choices: [`t${i}-a`, `t${i}-b`, `t${i}-c`, `t${i}-d`] as [string, string, string, string],
+      correctIndex: 0,
+      difficulty: ((i % 3) + 1) as 1 | 2 | 3,
+    }));
+    for (const seed of [1, 7, 42, 123, 999, 31337]) {
+      const plan = buildQuizPlan(seed, tagged);
+      const diffs = plan.questions.map(
+        (q) => tagged.find((t) => t.id === q.id)!.difficulty!,
+      );
+      const count = (d: number) => diffs.filter((x) => x === d).length;
+      expect(count(1), `seed ${seed} easy`).toBe(2);
+      expect(count(2), `seed ${seed} normal`).toBe(2);
+      expect(count(3), `seed ${seed} hard`).toBe(1);
+      for (let i = 1; i < diffs.length; i++) {
+        expect(diffs[i], `seed ${seed} ordering at ${i}`).toBeGreaterThanOrEqual(diffs[i - 1]);
+      }
+    }
+  });
+
+  it('falls back to category-only picking for untagged pools (nonsense)', () => {
+    // POOL has no difficulty tags — the round must still fill completely.
+    const plan = buildQuizPlan(11, POOL);
+    expect(plan.questions).toHaveLength(GAME.TRIVIA_QUESTION_COUNT);
+    expect(new Set(plan.questions.map((q) => q.id)).size).toBe(GAME.TRIVIA_QUESTION_COUNT);
+  });
+
   it('still fills the round when the pool cannot honor the category cap', () => {
     // POOL is single-category, so the cap alone can't fill the round — the
     // fallback pass must top it up to the configured count.
