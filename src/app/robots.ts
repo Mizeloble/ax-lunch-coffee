@@ -9,7 +9,9 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       // Room pages are ephemeral, per-group, and need a live socket — there's
       // nothing to index and a crawled code would 404. Keep bots on public pages.
-      disallow: ['/r/', '/api/'],
+      // /stats is the operator dashboard — crawling it would wake the
+      // scale-to-zero machine for nothing.
+      disallow: ['/r/', '/api/', '/stats'],
     },
     sitemap: `${siteUrl}/sitemap.xml`,
   };

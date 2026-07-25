@@ -372,6 +372,27 @@ export const ko = {
   dev: {
     botNames: ['봇1', '봇2', '봇3', '봇4', '봇5'] as const,
   },
+  // 운영자용 /stats 대시보드 — 색인 제외, 링크 미노출(URL 직접 접속).
+  stats: {
+    title: '트래픽 현황',
+    thisWeek: '이번 주 방 생성',
+    weekAgo: (n: number) => `${n}주 전`,
+    gateLabel: (goal: number) => `게이트: 주당 ${goal}개`,
+    gatePercent: (p: number) => `${p}%`,
+    streak: (n: number, goal: number) => `연속 달성 ${n}주 / ${goal}주`,
+    stageBadge: (n: number) => `Stage ${n}`,
+    stageDesc: [
+      '아직 유입 없음 — 지금은 뿌리는 단계 (실전 투입·블로그·시딩)',
+      '유입 시작 — 채널별 반응을 보며 되는 곳에 집중',
+      '게이트 통과! 도메인 구입 + 애드핏 심사 착수',
+      '확장 구간 — 서버 증설 + 애드센스 병행 검토',
+    ] as const,
+    roundsTitle: '최근 30일 게임별 라운드',
+    roundsEmpty: '아직 시작된 라운드가 없어요',
+    updatedAt: (t: string) => `${t} 기준 · 10분 캐시`,
+    noToken: 'FLY_PROMETHEUS_TOKEN이 설정되지 않았어요 (fly secrets)',
+    fetchFailed: '지표 조회에 실패했어요. 잠시 후 새로고침해주세요.',
+  },
   ads: {
     label: '광고',
   },
