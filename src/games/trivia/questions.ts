@@ -2,9 +2,11 @@
 // politics/religion/dated company info. Schema is immutable: id is a stable identifier
 // used for replay/debug, never displayed.
 //
-// Adding questions: append to the array, give it a fresh id (kebab-case, descriptive).
-// Don't reorder existing entries — server picks via seed-based shuffle, but the *pool*
-// itself is sorted by id at runtime, so insertion order doesn't matter for determinism.
+// Adding questions: append to the array, give it a fresh id (kebab-case, descriptive)
+// and a `difficulty`. Don't reorder existing entries — server picks via seed-based
+// shuffle, but the *pool* itself is sorted by id at runtime, so insertion order
+// doesn't matter for determinism. If the new question shares an answer space with an
+// existing one, add both to EXCLUSIVE_GROUPS at the bottom of this file.
 
 export type TriviaCategory = '한국상식' | '일반상식' | '과학' | '역사' | '문화';
 
@@ -14,10 +16,19 @@ export type TriviaQuestion = {
   question: string;
   choices: readonly [string, string, string, string];
   correctIndex: 0 | 1 | 2 | 3;
+  /**
+   * 파티 참가자(한국 성인) 기준 체감 난이도. 1 = 거의 전원 즉답, 2 = 보기를 보면
+   * 맞히는 수준, 3 = 특정 암기 지식이 필요해 상당수가 찍는다. 필수 — 라운드마다
+   * 쉬움 2·보통 2·어려움 1 쿼터로 뽑기 때문에, 태그가 빠지면 편차가 그대로 돌아온다.
+   */
+  difficulty: 1 | 2 | 3;
   /** Optional "did you know?" backstory shown on the result screen detail view.
    * Keep ≤80자 — one phone line worth of teasing context. Skip when the answer
    * speaks for itself (e.g. dictionary definitions). */
   note?: string;
+  /** Sibling families (see EXCLUSIVE_GROUPS below). Attached at module load —
+   * never set this on a question literal. */
+  exclusiveGroups?: readonly string[];
 };
 
 export const TRIVIA_POOL: readonly TriviaQuestion[] = [
@@ -27,6 +38,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '대한민국의 수도는?',
     choices: ['서울', '부산', '인천', '대전'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'kr-currency',
@@ -34,6 +46,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세종대왕이 만든 문자는?',
     choices: ['한자', '훈민정음', '이두', '향찰'],
     correctIndex: 1,
+    difficulty: 1,
     note: "정식 명칭은 '훈민정음'(백성을 가르치는 바른 소리). '한글'이란 이름은 1910년대 주시경 선생이 붙임.",
   },
   {
@@ -42,6 +55,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한반도에서 가장 높은 산은?',
     choices: ['한라산', '지리산', '백두산', '설악산'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'kr-flag',
@@ -49,6 +63,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '태극기 가운데 원의 빨간색이 의미하는 것은?',
     choices: ['땅', '음(陰)', '양(陽)', '하늘'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'world-largest-ocean',
@@ -56,6 +71,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세계에서 가장 큰 바다는?',
     choices: ['대서양', '인도양', '북극해', '태평양'],
     correctIndex: 3,
+    difficulty: 1,
     note: '지구 표면의 약 1/3. 모든 대륙의 면적을 합한 것보다 넓다.',
   },
   {
@@ -64,6 +80,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세계에서 가장 긴 강은?',
     choices: ['나일강', '아마존강', '양쯔강', '미시시피강'],
     correctIndex: 0,
+    difficulty: 2,
     note: '6,650km로 통상 1위. 다만 최근 측량으로 아마존이 더 길다는 주장도 있어 학계 논쟁 중.',
   },
   {
@@ -72,6 +89,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세계에서 가장 높은 산은?',
     choices: ['K2', '에베레스트', '킬리만자로', '몽블랑'],
     correctIndex: 1,
+    difficulty: 1,
     note: '해발 8,849m. 인도판이 유라시아판을 밀고 있어 매년 약 4mm씩 자란다.',
   },
   {
@@ -80,6 +98,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '프랑스의 수도는?',
     choices: ['로마', '베를린', '파리', '마드리드'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'sci-water-formula',
@@ -87,6 +106,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '물의 화학식은?',
     choices: ['CO₂', 'O₂', 'H₂', 'H₂O'],
     correctIndex: 3,
+    difficulty: 1,
   },
   {
     id: 'sci-planet-count',
@@ -94,6 +114,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '태양계 행성의 수는? (2006년 명왕성 분류 변경 이후)',
     choices: ['7개', '8개', '9개', '10개'],
     correctIndex: 1,
+    difficulty: 1,
     note: '2006년 명왕성이 "왜소행성"으로 강등. 1930년 발견 후 76년만에 자격 박탈.',
   },
   {
@@ -102,6 +123,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '빛의 속도와 가장 가까운 단위는?',
     choices: ['초속 30만km', '초속 3만km', '초속 300만km', '초속 3000km'],
     correctIndex: 0,
+    difficulty: 2,
     note: '정확히는 초속 299,792km. 1초에 지구를 7바퀴 반 돈다.',
   },
   {
@@ -110,6 +132,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '성인의 뼈 개수는 약 몇 개?',
     choices: ['106개', '156개', '206개', '256개'],
     correctIndex: 2,
+    difficulty: 2,
     note: '신생아는 약 270개. 자라면서 일부 뼈가 융합되어 줄어든다.',
   },
   {
@@ -118,6 +141,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '사람 피의 빨간색을 만드는 단백질은?',
     choices: ['멜라닌', '헤모글로빈', '케라틴', '콜라겐'],
     correctIndex: 1,
+    difficulty: 1,
     note: '헤모글로빈 속 철 원자가 산소와 결합할 때 빨개진다. 일부 갑각류는 구리 기반이라 파랗다.',
   },
   {
@@ -126,6 +150,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '제2차 세계대전이 끝난 해는?',
     choices: ['1939년', '1941년', '1945년', '1950년'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'cult-olympic-rings',
@@ -133,6 +158,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '올림픽 오륜기의 고리는 몇 개?',
     choices: ['4개', '5개', '6개', '7개'],
     correctIndex: 1,
+    difficulty: 1,
     note: '5대륙을 상징. 색은 어떤 나라 국기든 1색 이상 들어가도록 선정.',
   },
   {
@@ -141,6 +167,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"모나리자"를 그린 화가는?',
     choices: ['미켈란젤로', '레오나르도 다빈치', '라파엘로', '피카소'],
     correctIndex: 1,
+    difficulty: 1,
     note: '실물 크기는 77×53cm. "생각보다 작다"는 후기가 가장 많은 명화.',
   },
   {
@@ -149,7 +176,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"햄릿"을 쓴 작가는?',
     choices: ['괴테', '톨스토이', '셰익스피어', '도스토옙스키'],
     correctIndex: 2,
-    note: '햄릿의 모델인 덴마크 왕자가 실제 12세기 인물(암렛)이라는 설.',
+    difficulty: 1,
+    note: '원형은 12세기 덴마크 연대기에 실린 전설 속 왕자 암렛(Amleth).',
   },
   {
     id: 'cult-bts-debut',
@@ -157,14 +185,16 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: 'BTS가 데뷔한 해는?',
     choices: ['2010년', '2013년', '2015년', '2017년'],
     correctIndex: 1,
+    difficulty: 2,
     note: '데뷔 당시 "대형 기획사 안 끼면 망한다"는 평이 많았다.',
   },
   {
     id: 'cult-kimchi-origin',
     category: '문화',
     question: '김치의 빨간 양념에 들어가는 핵심 재료는?',
-    choices: ['고추가루', '간장', '된장', '카레가루'],
+    choices: ['고춧가루', '간장', '된장', '카레가루'],
     correctIndex: 0,
+    difficulty: 1,
     note: '고추는 임진왜란(1592) 이후 한반도에 들어옴. 그 전 김치는 흰색이었다.',
   },
   {
@@ -173,15 +203,17 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '지구상에서 가장 빠른 동물은?',
     choices: ['치타', '송골매', '말', '돌고래'],
     correctIndex: 1,
+    difficulty: 2,
     note: '급강하 시 시속 380km 이상. 평지 1위는 치타(약 110km/h).',
   },
   {
     id: 'kr-han-river-bridge',
     category: '한국상식',
-    question: '서울 한강을 건너는 다리 중 가장 먼저 만들어진 다리는?',
+    question: '서울 한강의 도로 다리 중 가장 먼저 만들어진 것은?',
     choices: ['반포대교', '한강대교', '성수대교', '동작대교'],
     correctIndex: 1,
-    note: '1917년 개통. 6·25 때 폭파됐다 재건. 가장 오래됐는데 이름도 그냥 "한강대교".',
+    difficulty: 2,
+    note: '1917년 개통, 철교(1900)를 빼면 최초. 6·25 때 폭파됐다 재건.',
   },
   {
     id: 'world-smallest-country',
@@ -189,7 +221,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세계에서 가장 작은 나라는?',
     choices: ['모나코', '바티칸시국', '산마리노', '리히텐슈타인'],
     correctIndex: 1,
-    note: '면적 0.49km² (서울 여의도의 약 1/6). 인구는 약 800명.',
+    difficulty: 1,
+    note: '면적 0.44km² (서울 여의도의 약 1/6). 인구는 약 800명.',
   },
   {
     id: 'sci-dna-shape',
@@ -197,6 +230,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: 'DNA의 구조 모양은?',
     choices: ['직선', '나선형', '이중나선', '삼중나선'],
     correctIndex: 2,
+    difficulty: 1,
     note: '왓슨·크릭이 1953년 발표. 결정적 단서는 로잘린드 프랭클린의 X선 사진.',
   },
   {
@@ -205,6 +239,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한국 전통 의상의 이름은?',
     choices: ['기모노', '치파오', '한복', '아오자이'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'world-largest-desert',
@@ -212,6 +247,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세계에서 가장 넓은 사막은?',
     choices: ['사하라 사막', '고비 사막', '아라비아 사막', '남극 사막'],
     correctIndex: 3,
+    difficulty: 3,
     note: '"사막"의 정의는 강수량 250mm 이하. 남극은 모래는 없지만 강수량이 가장 적다.',
   },
   {
@@ -220,6 +256,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '커피의 원산지로 알려진 나라는?',
     choices: ['브라질', '콜롬비아', '에티오피아', '베트남'],
     correctIndex: 2,
+    difficulty: 2,
     note: '9세기 양치기 칼디가 빨간 열매 먹고 활발해진 염소를 본 게 발견 전설.',
   },
   {
@@ -228,6 +265,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '태양빛이 모두 합쳐졌을 때 실제로 보이는 색은?',
     choices: ['노란색', '주황색', '하얀색', '빨간색'],
     correctIndex: 2,
+    difficulty: 2,
     note: '우주에서 보면 하얀색. 지구에서 노랗게 보이는 건 대기 산란 때문.',
   },
 
@@ -238,6 +276,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한국에서 가장 큰 섬은?',
     choices: ['제주도', '거제도', '강화도', '울릉도'],
     correctIndex: 0,
+    difficulty: 1,
     note: '면적 약 1,847km². 부산광역시(770km²)의 두 배가 넘는다.',
   },
   {
@@ -246,7 +285,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한국에서 인구가 두 번째로 많은 도시는?',
     choices: ['인천', '부산', '대구', '광주'],
     correctIndex: 1,
-    note: '부산 약 328만 vs 인천 약 300만. 다만 2030년대 초 인천이 따라잡을 전망.',
+    difficulty: 1,
+    note: '부산 약 324만 vs 인천 약 305만(2025년 말). 2030년대 초 역전 전망.',
   },
   {
     id: 'kr-jeju-status',
@@ -254,6 +294,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '제주의 정식 행정 명칭은?',
     choices: ['제주도', '제주광역시', '제주특별자치도', '제주특별시'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'kr-baekje-last-capital',
@@ -261,6 +302,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '백제의 마지막 수도(현재의 부여)는?',
     choices: ['한성', '웅진', '평양', '사비'],
     correctIndex: 3,
+    difficulty: 3,
     note: '538년 성왕이 천도. 660년 의자왕 때 나당연합군에 함락되며 백제 멸망.',
   },
   {
@@ -269,13 +311,15 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '신라의 수도였던 도시는?',
     choices: ['경주', '개성', '부여', '평양'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'kr-taegeukgi-trigrams',
     category: '한국상식',
-    question: '태극기의 사괘(四卦)가 상징하는 것은?',
+    question: '태극기 사괘(건곤감리)가 상징하는 자연 요소는?',
     choices: ['동서남북', '천지수화', '봄여름가을겨울', '인의예지'],
     correctIndex: 1,
+    difficulty: 2,
   },
   {
     id: 'kr-sejong-father',
@@ -283,6 +327,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세종대왕의 아버지인 조선 3대 왕은?',
     choices: ['태조', '정종', '태종', '단종'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'kr-hansando-tactic',
@@ -290,36 +335,41 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한산도 대첩에서 이순신이 사용한 진법은?',
     choices: ['어린진', '첨자진', '안행진', '학익진'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'kr-honcheonui',
     category: '한국상식',
     question: '천체의 운행을 관측하던 조선의 기구는?',
-    choices: ['혼천의', '측우기', '자격루', '앙부일구'],
+    choices: ['혼천의', '측우기', '자격루', '풍기대'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'kr-rain-gauge',
     category: '한국상식',
     question: '세종 때 만들어진 세계 최초 우량계는?',
-    choices: ['혼천의', '측우기', '자격루', '앙부일구'],
+    choices: ['수표', '측우기', '일성정시의', '앙부일구'],
     correctIndex: 1,
+    difficulty: 1,
     note: '1441년. 이탈리아의 비슷한 장치보다 약 200년 앞섬.',
   },
   {
     id: 'kr-water-clock',
     category: '한국상식',
     question: '장영실이 만든 자동 물시계는?',
-    choices: ['혼천의', '측우기', '자격루', '앙부일구'],
+    choices: ['간의', '규표', '자격루', '앙부일구'],
     correctIndex: 2,
+    difficulty: 2,
     note: '장영실은 노비 출신. 세종이 발탁해 종3품까지 올려준 파격 인재.',
   },
   {
     id: 'kr-sundial',
     category: '한국상식',
     question: '솥 모양의 조선시대 해시계 이름은?',
-    choices: ['혼천의', '측우기', '자격루', '앙부일구'],
+    choices: ['혼천의', '수표', '자격루', '앙부일구'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'kr-chuseok',
@@ -327,6 +377,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '추석은 음력 며칠?',
     choices: ['8월 15일', '7월 7일', '9월 9일', '10월 10일'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'kr-seollal',
@@ -334,6 +385,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '설날은 음력 며칠?',
     choices: ['12월 31일', '1월 1일', '1월 15일', '2월 1일'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'kr-daeboreum',
@@ -341,6 +393,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '정월 대보름은 음력 며칠?',
     choices: ['1월 1일', '2월 15일', '1월 15일', '8월 15일'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'kr-dano',
@@ -348,6 +401,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '단오는 음력 며칠?',
     choices: ['3월 3일', '7월 7일', '9월 9일', '5월 5일'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'kr-bibimbap-city',
@@ -355,13 +409,15 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '비빔밥으로 가장 유명한 도시는?',
     choices: ['전주', '광주', '안동', '대구'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'kr-andong-food',
     category: '한국상식',
-    question: '안동의 대표 향토 음식은?',
-    choices: ['수원갈비', '안동찜닭', '춘천닭갈비', '의정부부대찌개'],
+    question: '찜닭으로 유명한 도시는?',
+    choices: ['수원', '안동', '춘천', '의정부'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'kr-gayageum',
@@ -369,6 +425,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '가야금의 현 개수는?',
     choices: ['6현', '9현', '12현', '24현'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'kr-geomungo',
@@ -376,6 +433,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '거문고의 현 개수는?',
     choices: ['12현', '9현', '4현', '6현'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'kr-anthem-composer',
@@ -383,6 +441,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '애국가의 작곡가는?',
     choices: ['안익태', '홍난파', '윤이상', '박두진'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'kr-national-flower',
@@ -390,6 +449,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '대한민국의 나라꽃은?',
     choices: ['진달래', '무궁화', '개나리', '매화'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'kr-pansori-five',
@@ -397,6 +457,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '판소리 다섯 마당에 속하는 작품은?',
     choices: ['구운몽', '홍길동전', '춘향가', '양반전'],
     correctIndex: 2,
+    difficulty: 2,
     note: '다섯 마당: 춘향가·심청가·흥부가·수궁가·적벽가.',
   },
   {
@@ -405,6 +466,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '독도가 행정구역상 속한 도(道)는?',
     choices: ['강원도', '경상남도', '전라남도', '경상북도'],
     correctIndex: 3,
+    difficulty: 2,
     note: '정확한 주소: 경상북도 울릉군 울릉읍 독도리. 우편번호도 따로 있다(40240).',
   },
   {
@@ -413,6 +475,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '삼국시대의 세 나라는?',
     choices: ['고구려·백제·신라', '고구려·발해·신라', '백제·신라·가야', '고구려·백제·가야'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'kr-goryeo-founder',
@@ -420,6 +483,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '고려를 건국한 인물은?',
     choices: ['견훤', '왕건', '궁예', '김부식'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'kr-silla-unifier',
@@ -427,6 +491,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '삼국 통일을 완수한 신라의 왕은?',
     choices: ['진흥왕', '무열왕', '문무왕', '신문왕'],
     correctIndex: 2,
+    difficulty: 3,
   },
   {
     id: 'kr-hwarang',
@@ -434,6 +499,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '화랑은 어느 나라의 청년 조직?',
     choices: ['고구려', '백제', '가야', '신라'],
     correctIndex: 3,
+    difficulty: 1,
   },
   {
     id: 'kr-tripitaka-temple',
@@ -441,6 +507,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '팔만대장경이 보관된 사찰은?',
     choices: ['해인사', '불국사', '통도사', '송광사'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'kr-bulguksa-city',
@@ -448,6 +515,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '불국사가 위치한 도시는?',
     choices: ['부여', '경주', '공주', '안동'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'kr-armistice-year',
@@ -455,6 +523,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '6·25 전쟁의 정전 협정이 체결된 해는?',
     choices: ['1945년', '1948년', '1953년', '1950년'],
     correctIndex: 2,
+    difficulty: 2,
     note: '"종전"이 아니라 "정전". 70년 넘게 기술적으로 휴전 상태.',
   },
   {
@@ -463,6 +532,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '동지에 먹는 한국 전통 음식은?',
     choices: ['떡국', '송편', '부럼', '팥죽'],
     correctIndex: 3,
+    difficulty: 1,
   },
   {
     id: 'kr-songpyeon-day',
@@ -470,6 +540,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '송편을 먹는 명절은?',
     choices: ['추석', '설날', '단오', '동지'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'kr-tteokguk-day',
@@ -477,6 +548,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '떡국을 먹는 명절은?',
     choices: ['추석', '설날', '단오', '한식'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'kr-special-self-city',
@@ -484,6 +556,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '대한민국의 특별자치시는?',
     choices: ['인천', '대전', '세종', '광주'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'kr-changdeok-unesco',
@@ -491,6 +564,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '조선 5대 궁궐 중 유네스코 세계유산인 곳은?',
     choices: ['경복궁', '덕수궁', '창경궁', '창덕궁'],
     correctIndex: 3,
+    difficulty: 3,
     note: '1997년 등재. 자연 지형을 그대로 살린 비대칭 설계가 등재 결정 포인트.',
   },
   {
@@ -499,6 +573,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '경복궁을 처음 지은 조선의 왕은?',
     choices: ['태조', '세종', '태종', '성종'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'kr-pyeongchang-olympics',
@@ -506,6 +581,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '평창 동계올림픽이 개최된 해는?',
     choices: ['2014년', '2018년', '2016년', '2022년'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'kr-seoul-olympics',
@@ -513,6 +589,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '서울 하계올림픽이 개최된 해는?',
     choices: ['1984년', '1992년', '1988년', '2002년'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'kr-2002-worldcup',
@@ -520,7 +597,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한일 월드컵이 개최된 해는?',
     choices: ['1998년', '2006년', '2010년', '2002년'],
     correctIndex: 3,
-    note: '한국은 사상 첫 4강. 일본은 16강. 공동 개최는 월드컵 사상 처음이자 마지막.',
+    difficulty: 1,
+    note: '한국은 사상 첫 4강. 일본은 16강. 월드컵 사상 최초의 공동 개최 대회였다.',
   },
 
   // ── 일반상식 40 ───────────────────────────────────────────────
@@ -530,6 +608,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '캐나다의 수도는?',
     choices: ['토론토', '몬트리올', '밴쿠버', '오타와'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'world-australia-capital',
@@ -537,6 +616,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '호주의 수도는?',
     choices: ['캔버라', '시드니', '멜버른', '퍼스'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'world-brazil-capital',
@@ -544,6 +624,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '브라질의 수도는?',
     choices: ['상파울루', '브라질리아', '리우데자네이루', '살바도르'],
     correctIndex: 1,
+    difficulty: 2,
   },
   {
     id: 'world-vietnam-capital',
@@ -551,6 +632,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '베트남의 수도는? (호치민 아님)',
     choices: ['호치민', '다낭', '하이퐁', '하노이'],
     correctIndex: 3,
+    difficulty: 1,
     note: '호치민은 인구·경제 1위 도시. 정치 수도는 북부 하노이.',
   },
   {
@@ -559,6 +641,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '인도의 수도는? (뭄바이 아님)',
     choices: ['뉴델리', '뭄바이', '콜카타', '첸나이'],
     correctIndex: 0,
+    difficulty: 1,
     note: '뭄바이는 경제 수도, 뉴델리가 정치 수도. 둘 다 흔히 헷갈림.',
   },
   {
@@ -567,6 +650,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '튀르키예(터키)의 수도는?',
     choices: ['이스탄불', '이즈미르', '앙카라', '안탈리아'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'world-largest-country',
@@ -574,7 +658,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '면적이 가장 넓은 나라는?',
     choices: ['중국', '미국', '캐나다', '러시아'],
     correctIndex: 3,
-    note: '약 1,710만km². 명왕성 표면적보다 살짝 더 크다.',
+    difficulty: 1,
+    note: '약 1,710만km². 지구 육지의 약 11%를 혼자 차지한다.',
   },
   {
     id: 'world-most-populous',
@@ -582,7 +667,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '인구가 가장 많은 나라는? (2025년 기준)',
     choices: ['인도', '중국', '미국', '인도네시아'],
     correctIndex: 0,
-    note: '2023년 인도가 중국 추월. 인도 인구의 절반 이상이 25세 미만.',
+    difficulty: 2,
+    note: '2023년 인도가 중국 추월. 인도 인구의 40% 이상이 25세 미만.',
   },
   {
     id: 'world-largest-continent',
@@ -590,6 +676,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '면적이 가장 넓은 대륙은?',
     choices: ['아프리카', '아시아', '북아메리카', '유럽'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'world-smallest-continent',
@@ -597,7 +684,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '면적이 가장 작은 대륙은? (남극 제외)',
     choices: ['유럽', '남아메리카', '오세아니아', '북아메리카'],
     correctIndex: 2,
-    note: '오세아니아 면적의 99%가 호주. 호주는 "대륙으로 분류되는 가장 큰 섬"이기도 함.',
+    difficulty: 2,
+    note: '오세아니아 면적의 약 86%가 호주. 호주는 섬이 아닌 대륙 — 최대 섬은 그린란드.',
   },
   {
     id: 'world-largest-lake',
@@ -605,7 +693,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '면적이 가장 큰 호수는?',
     choices: ['바이칼호', '빅토리아호', '슈피리어호', '카스피해'],
     correctIndex: 3,
-    note: '면적 약 371,000km² (일본보다 살짝 큼). 짠물이라 "바다"로도 분류.',
+    difficulty: 2,
+    note: '면적 약 37만km² — 일본 전체와 거의 맞먹는다. 짠물이라 "바다"로도 분류.',
   },
   {
     id: 'world-deepest-lake',
@@ -613,7 +702,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세계에서 가장 깊은 호수는?',
     choices: ['바이칼호', '카스피해', '빅토리아호', '탕가니카호'],
     correctIndex: 0,
-    note: '깊이 1,642m. 지구 담수의 약 20%가 이 호수에 들어 있다.',
+    difficulty: 2,
+    note: '깊이 1,642m. 지표 담수의 약 20%가 이 호수 하나에 들어 있다.',
   },
   {
     id: 'world-amazon-country',
@@ -621,6 +711,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '아마존강이 가장 길게 흐르는 나라는?',
     choices: ['페루', '브라질', '콜롬비아', '베네수엘라'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'world-nile-mouth',
@@ -628,6 +719,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '나일강이 흘러 들어가는 바다는?',
     choices: ['홍해', '인도양', '지중해', '흑해'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'world-un-headquarters',
@@ -635,6 +727,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: 'UN 본부가 있는 도시는?',
     choices: ['워싱턴 D.C.', '뉴욕', '제네바', '브뤼셀'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'world-eu-headquarters',
@@ -642,6 +735,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '유럽연합(EU) 본부가 있는 도시는?',
     choices: ['파리', '베를린', '브뤼셀', '빈'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'world-fifa-headquarters',
@@ -649,6 +743,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: 'FIFA 본부가 있는 도시는?',
     choices: ['파리', '런던', '마드리드', '취리히'],
     correctIndex: 3,
+    difficulty: 3,
   },
   {
     id: 'world-first-modern-olympics',
@@ -656,6 +751,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '1896년 첫 근대 올림픽이 열린 도시는?',
     choices: ['아테네', '파리', '런던', '로마'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'world-greenwich',
@@ -663,6 +759,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '본초자오선이 지나는 영국의 천문대는?',
     choices: ['옥스퍼드', '그리니치', '케임브리지', '에든버러'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'world-suez-canal',
@@ -670,6 +767,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '수에즈 운하가 있는 나라는?',
     choices: ['사우디아라비아', '튀르키예', '이집트', '이라크'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'world-panama-canal',
@@ -677,6 +775,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '파나마 운하가 잇는 두 바다는?',
     choices: ['인도양·태평양', '대서양·인도양', '북극해·태평양', '대서양·태평양'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'world-gibraltar-continents',
@@ -684,6 +783,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '지브롤터 해협을 사이에 둔 두 대륙은?',
     choices: ['유럽·아프리카', '아시아·유럽', '아프리카·아시아', '북·남아메리카'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'world-bosphorus-country',
@@ -691,6 +791,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '보스포러스 해협이 있는 나라는?',
     choices: ['그리스', '튀르키예', '이탈리아', '이집트'],
     correctIndex: 1,
+    difficulty: 2,
   },
   {
     id: 'world-largest-island',
@@ -698,6 +799,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세계에서 가장 큰 섬은? (대륙 제외)',
     choices: ['마다가스카르', '뉴기니', '그린란드', '보르네오'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'world-eiffel-country',
@@ -705,6 +807,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '에펠탑이 있는 나라는?',
     choices: ['영국', '독일', '미국', '프랑스'],
     correctIndex: 3,
+    difficulty: 1,
   },
 
   // ── 과학 40 ───────────────────────────────────────────────────
@@ -714,6 +817,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '금의 원소 기호는?',
     choices: ['Au', 'Ag', 'Pb', 'Pt'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'sci-ag',
@@ -721,6 +825,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '은의 원소 기호는?',
     choices: ['Au', 'Ag', 'Al', 'As'],
     correctIndex: 1,
+    difficulty: 2,
   },
   {
     id: 'sci-fe',
@@ -728,6 +833,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '철의 원소 기호는?',
     choices: ['Cu', 'Cr', 'Fe', 'Co'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'sci-cu',
@@ -735,6 +841,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '구리의 원소 기호는?',
     choices: ['Cr', 'Co', 'Ca', 'Cu'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'sci-co2-formula',
@@ -742,6 +849,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '이산화탄소의 화학식은?',
     choices: ['CO', 'NO₂', 'CO₂', 'O₂'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'sci-salt-formula',
@@ -749,6 +857,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '소금(염화나트륨)의 화학식은?',
     choices: ['KCl', 'NaOH', 'HCl', 'NaCl'],
     correctIndex: 3,
+    difficulty: 1,
   },
   {
     id: 'sci-mars-color',
@@ -756,6 +865,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '화성이 붉게 보이는 주된 원인은?',
     choices: ['산화철', '얼음', '메탄가스', '모래'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'sci-largest-planet',
@@ -763,6 +873,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '태양계에서 가장 큰 행성은?',
     choices: ['지구', '목성', '토성', '천왕성'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'sci-smallest-planet',
@@ -770,6 +881,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '태양계에서 가장 작은 행성은?',
     choices: ['화성', '금성', '수성', '명왕성'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'sci-closest-star',
@@ -777,6 +889,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '태양 다음으로 가까운 항성은?',
     choices: ['시리우스', '베가', '폴라리스', '프록시마 센타우리'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'sci-moon-distance',
@@ -784,6 +897,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '지구에서 달까지 평균 거리는 약?',
     choices: ['38만km', '3.8만km', '380만km', '3800km'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'sci-earth-rotation',
@@ -791,6 +905,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '지구의 자전 주기는 약?',
     choices: ['12시간', '24시간', '48시간', '7일'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'sci-earth-orbit',
@@ -798,6 +913,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '지구의 공전 주기는 약?',
     choices: ['180일', '30일', '365일', '730일'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'sci-moon-orbit',
@@ -805,6 +921,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '달의 공전 주기는 약?',
     choices: ['7일', '90일', '365일', '27일'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'sci-andromeda',
@@ -812,6 +929,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '우리은하에 가장 가까운 큰 나선은하는?',
     choices: ['안드로메다', '마젤란', '삼각형자리', '처녀자리'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'sci-heart-chambers',
@@ -819,6 +937,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '사람 심장의 방(chamber) 수는?',
     choices: ['2개', '4개', '3개', '5개'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'sci-teeth-adult',
@@ -826,6 +945,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '성인 영구치의 개수는?',
     choices: ['20개', '28개', '32개', '36개'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'sci-cone-cells',
@@ -833,6 +953,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '눈에서 색을 인식하는 시각세포는?',
     choices: ['간상세포', '시신경', '망막세포', '원추세포'],
     correctIndex: 3,
+    difficulty: 3,
   },
   {
     id: 'sci-pi',
@@ -840,6 +961,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '원주율 π의 근삿값은?',
     choices: ['3.14', '2.72', '1.41', '1.62'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'sci-light-year',
@@ -847,6 +969,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '1광년은 어떤 단위?',
     choices: ['시간', '거리', '속도', '에너지'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'sci-mole',
@@ -854,6 +977,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '1몰의 입자 개수(아보가드로 수)는?',
     choices: ['3.14×10²³', '9.81×10²³', '6.02×10²³', '1.60×10⁻¹⁹'],
     correctIndex: 2,
+    difficulty: 3,
   },
   {
     id: 'sci-newton',
@@ -861,6 +985,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '만유인력의 법칙을 발견한 사람은?',
     choices: ['갈릴레이', '케플러', '코페르니쿠스', '뉴턴'],
     correctIndex: 3,
+    difficulty: 1,
     note: '"머리에 사과 떨어진 일화"는 후대에 부풀려진 이야기란 설이 유력.',
   },
   {
@@ -869,6 +994,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '상대성이론을 정립한 과학자는?',
     choices: ['아인슈타인', '뉴턴', '호킹', '보어'],
     correctIndex: 0,
+    difficulty: 1,
     note: '노벨상은 상대성이론이 아니라 광전효과로 받았다(1921).',
   },
   {
@@ -877,6 +1003,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '자연선택에 의한 진화론을 발표한 사람은?',
     choices: ['라마르크', '다윈', '멘델', '파스퇴르'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'sci-pasteur',
@@ -884,6 +1011,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '광견병 백신을 개발한 과학자는?',
     choices: ['코흐', '플레밍', '파스퇴르', '제너'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'sci-fleming',
@@ -891,6 +1019,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '페니실린을 발견한 사람은?',
     choices: ['파스퇴르', '코흐', '왓슨', '플레밍'],
     correctIndex: 3,
+    difficulty: 2,
     note: '곰팡이가 우연히 묻은 배양접시를 안 버린 덕분. 실험실 청소 안 한 게 의학사를 바꿈.',
   },
   {
@@ -899,6 +1028,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '라듐과 폴로늄을 발견한 과학자는?',
     choices: ['퀴리 부인', '에디슨', '패러데이', '노벨'],
     correctIndex: 0,
+    difficulty: 1,
     note: '노벨상을 두 번(물리·화학) 받은 최초의 인물. 그녀의 노트는 100년 넘게 방사능이 남아 있다.',
   },
   {
@@ -907,6 +1037,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '백열전구를 상용화한 발명가는?',
     choices: ['테슬라', '에디슨', '벨', '와트'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'sci-bell',
@@ -914,6 +1045,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '전화를 발명한 사람은?',
     choices: ['모스', '에디슨', '벨', '마르코니'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'sci-marconi',
@@ -921,6 +1053,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '무선전신을 발명한 사람은?',
     choices: ['모스', '벨', '패러데이', '마르코니'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'sci-gravity-g',
@@ -928,6 +1061,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '지구 표면에서 중력 가속도 값은 약?',
     choices: ['9.8 m/s²', '4.9 m/s²', '19.6 m/s²', '32 m/s²'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'sci-water-boil',
@@ -935,6 +1069,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '1기압에서 물의 끓는점은?',
     choices: ['50°C', '100°C', '150°C', '212°C'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'sci-largest-mammal',
@@ -942,6 +1077,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '지구상에서 가장 큰 포유류는?',
     choices: ['코끼리', '코뿔소', '향유고래', '대왕고래'],
     correctIndex: 3,
+    difficulty: 2,
     note: '심장 무게만 약 180kg. 사람보다 무겁다. 혀 무게도 코끼리만 함.',
   },
   {
@@ -950,6 +1086,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '거미의 다리 개수는?',
     choices: ['8개', '6개', '10개', '12개'],
     correctIndex: 0,
+    difficulty: 1,
     note: '곤충은 6개. 거미·전갈은 8개. 그래서 거미는 곤충이 아닌 거미강.',
   },
   {
@@ -958,6 +1095,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: 'ABO 혈액형의 종류는?',
     choices: ['2가지', '4가지', '3가지', '8가지'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'sci-photosynthesis-input',
@@ -965,6 +1103,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '식물의 광합성에 필요한 기체는?',
     choices: ['산소', '질소', '이산화탄소', '수소'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'sci-photosynthesis-output',
@@ -972,6 +1111,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '식물이 광합성으로 내보내는 기체는?',
     choices: ['이산화탄소', '메탄', '수소', '산소'],
     correctIndex: 3,
+    difficulty: 1,
   },
 
   // ── 역사 (세계사) ─────────────────────────────────────────────
@@ -981,6 +1121,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '프랑스 혁명이 일어난 해는?',
     choices: ['1776년', '1815년', '1789년', '1848년'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'hist-american-independence',
@@ -988,6 +1129,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '미국 독립선언이 발표된 해는?',
     choices: ['1492년', '1789년', '1812년', '1776년'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'hist-columbus',
@@ -995,6 +1137,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '콜럼버스가 신대륙에 도착한 해는?',
     choices: ['1492년', '1453년', '1521년', '1607년'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'hist-ww1-start',
@@ -1002,6 +1145,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '제1차 세계대전이 시작된 해는?',
     choices: ['1905년', '1914년', '1910년', '1918년'],
     correctIndex: 1,
+    difficulty: 2,
   },
   {
     id: 'hist-ww1-end',
@@ -1009,6 +1153,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '제1차 세계대전이 끝난 해는?',
     choices: ['1914년', '1916년', '1918년', '1920년'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'hist-ww2-start',
@@ -1016,6 +1161,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '제2차 세계대전이 시작된 해는?',
     choices: ['1933년', '1937년', '1941년', '1939년'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'hist-bastille',
@@ -1023,6 +1169,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '프랑스 혁명의 시작을 알린 사건은?',
     choices: ['바스티유 습격', '베르사유 행진', '단두대 처형', '나폴레옹 즉위'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'hist-waterloo',
@@ -1030,6 +1177,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '나폴레옹이 패배한 마지막 전투는?',
     choices: ['트라팔가', '워털루', '아우스터리츠', '라이프치히'],
     correctIndex: 1,
+    difficulty: 2,
   },
   {
     id: 'hist-russia-revolution',
@@ -1037,6 +1185,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '러시아 10월 혁명이 일어난 해는?',
     choices: ['1905년', '1922년', '1917년', '1939년'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'hist-berlin-wall-fall',
@@ -1044,6 +1193,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '베를린 장벽이 무너진 해는?',
     choices: ['1985년', '1991년', '1993년', '1989년'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'hist-soviet-collapse',
@@ -1051,6 +1201,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '소련이 해체된 해는?',
     choices: ['1991년', '1989년', '1993년', '1995년'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'hist-renaissance-origin',
@@ -1058,6 +1209,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '르네상스가 시작된 나라는?',
     choices: ['프랑스', '이탈리아', '영국', '독일'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'hist-industrial-rev',
@@ -1065,6 +1217,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '산업혁명이 처음 시작된 나라는?',
     choices: ['프랑스', '독일', '영국', '미국'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'hist-rome-fall-west',
@@ -1072,6 +1225,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '서로마 제국이 멸망한 해는?',
     choices: ['313년', '1054년', '1453년', '476년'],
     correctIndex: 3,
+    difficulty: 3,
   },
   {
     id: 'hist-east-roman-fall',
@@ -1079,6 +1233,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '동로마(비잔틴) 제국이 멸망한 해는?',
     choices: ['1453년', '476년', '1054년', '1492년'],
     correctIndex: 0,
+    difficulty: 3,
   },
   {
     id: 'hist-china-qin',
@@ -1086,6 +1241,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '중국을 처음 통일한 황제는?',
     choices: ['한무제', '진시황', '당태종', '명태조'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'hist-china-prc',
@@ -1093,6 +1249,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '중화인민공화국이 수립된 해는?',
     choices: ['1911년', '1937년', '1949년', '1976년'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'hist-meiji-restoration',
@@ -1100,6 +1257,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '일본 메이지 유신이 일어난 해는?',
     choices: ['1853년', '1894년', '1905년', '1868년'],
     correctIndex: 3,
+    difficulty: 3,
   },
   {
     id: 'hist-paper-invent',
@@ -1107,6 +1265,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '종이를 처음 만든 나라는?',
     choices: ['이집트', '중국', '그리스', '인도'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'hist-printing-gutenberg',
@@ -1114,6 +1273,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '활판 인쇄술을 유럽에 보급한 사람은?',
     choices: ['마르코폴로', '콜럼버스', '구텐베르크', '갈릴레이'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'hist-magna-carta',
@@ -1121,6 +1281,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '영국 마그나카르타가 서명된 해는?',
     choices: ['1066년', '1453년', '1492년', '1215년'],
     correctIndex: 3,
+    difficulty: 3,
   },
 
   // ── 문화 40 ───────────────────────────────────────────────────
@@ -1130,6 +1291,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"별이 빛나는 밤"을 그린 화가는?',
     choices: ['반 고흐', '모네', '고갱', '세잔'],
     correctIndex: 0,
+    difficulty: 1,
     note: '정신병원 입원 중인 1889년 작. 창밖 새벽 풍경에 상상을 더한 그림.',
   },
   {
@@ -1138,6 +1300,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"해바라기" 연작으로 유명한 화가는?',
     choices: ['세잔', '반 고흐', '모네', '마네'],
     correctIndex: 1,
+    difficulty: 1,
     note: '살아생전 판 그림은 1점뿐(또는 0점이라는 설). 죽고 나서야 폭발적으로 평가됨.',
   },
   {
@@ -1146,6 +1309,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '인상주의(인상파)라는 이름의 유래가 된 화가는?',
     choices: ['마네', '르누아르', '모네', '드가'],
     correctIndex: 2,
+    difficulty: 2,
     note: '모네의 작품 "인상, 해돋이"를 평론가가 비꼬는 표현으로 쓴 게 그대로 굳어짐.',
   },
   {
@@ -1154,6 +1318,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"수련" 연작으로 유명한 화가는?',
     choices: ['고흐', '피카소', '마티스', '모네'],
     correctIndex: 3,
+    difficulty: 2,
     note: '지베르니 자기 정원의 수련만 30년 동안 250점 넘게 그렸다.',
   },
   {
@@ -1162,6 +1327,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"게르니카"를 그린 화가는?',
     choices: ['피카소', '미로', '달리', '마티스'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'cult-dali-clocks',
@@ -1169,6 +1335,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '흘러내리는 시계로 유명한 초현실주의 화가는?',
     choices: ['피카소', '달리', '마그리트', '칸딘스키'],
     correctIndex: 1,
+    difficulty: 2,
     note: '"녹는 시계" 영감은 햇볕에 녹아내린 카망베르 치즈를 봤을 때 떠올랐다고.',
   },
   {
@@ -1177,7 +1344,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '시스티나 성당의 천장화를 그린 화가는?',
     choices: ['다빈치', '라파엘로', '미켈란젤로', '도나텔로'],
     correctIndex: 2,
-    note: '4년에 걸쳐 거의 누운 채로 그렸다. 목·허리 통증 후유증이 평생.',
+    difficulty: 2,
+    note: '4년간 비계 위에 서서 고개를 젖힌 채 그렸다. 목·허리 통증 후유증이 평생.',
   },
   {
     id: 'cult-david-statue',
@@ -1185,6 +1353,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"다비드상"을 조각한 사람은?',
     choices: ['도나텔로', '베르니니', '로댕', '미켈란젤로'],
     correctIndex: 3,
+    difficulty: 2,
     note: '높이 5.17m 거대 대리석 한 덩이로 조각. 이미 다른 조각가가 포기한 돌이었다.',
   },
   {
@@ -1193,6 +1362,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '조각상 "생각하는 사람"의 작가는?',
     choices: ['로댕', '미켈란젤로', '베르니니', '도나텔로'],
     correctIndex: 0,
+    difficulty: 1,
     note: '원래 "지옥의 문" 위에 단테가 앉아 있는 모습으로 구상된 모형이었다.',
   },
   {
@@ -1201,6 +1371,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"절규"를 그린 화가는?',
     choices: ['클림트', '뭉크', '쇠라', '마티스'],
     correctIndex: 1,
+    difficulty: 1,
     note: '오슬로의 핏빛 노을을 보고 영감 — 1883년 화산 분화의 잔재 때문이란 설.',
   },
   {
@@ -1209,6 +1380,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"키스"(황금색 명화)를 그린 화가는?',
     choices: ['뭉크', '모네', '클림트', '마네'],
     correctIndex: 2,
+    difficulty: 2,
     note: '실제 금박을 캔버스에 붙여 만든 작품. 클림트의 "황금기" 대표작.',
   },
   {
@@ -1217,7 +1389,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '베토벤 교향곡 제9번의 별명은?',
     choices: ['영웅', '운명', '전원', '합창'],
     correctIndex: 3,
-    note: '청각을 잃은 뒤 작곡. 초연 후 박수가 보일 때까지 박수 받는 줄 몰랐다.',
+    difficulty: 2,
+    note: '청각을 잃은 뒤 작곡. 초연 때 청중을 돌아보고서야 박수받는 걸 알았다.',
   },
   {
     id: 'cult-beethoven-5',
@@ -1225,6 +1398,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '베토벤 교향곡 제5번의 별명은?',
     choices: ['운명', '영웅', '합창', '전원'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'cult-beethoven-3',
@@ -1232,6 +1406,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '베토벤 교향곡 제3번의 별명은?',
     choices: ['전원', '영웅', '운명', '합창'],
     correctIndex: 1,
+    difficulty: 3,
   },
   {
     id: 'cult-mozart-magic',
@@ -1239,6 +1414,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '모차르트의 "마술피리"는 어떤 장르?',
     choices: ['교향곡', '협주곡', '오페라', '소나타'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'cult-bach-aria',
@@ -1246,6 +1422,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"G선상의 아리아"를 작곡한 사람은?',
     choices: ['헨델', '비발디', '모차르트', '바흐'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'cult-vivaldi-fourseasons',
@@ -1253,6 +1430,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"사계"를 작곡한 작곡가는?',
     choices: ['비발디', '바흐', '모차르트', '헨델'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'cult-schubert-erlking',
@@ -1260,6 +1438,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '가곡 "마왕"을 작곡한 사람은?',
     choices: ['슈만', '슈베르트', '브람스', '멘델스존'],
     correctIndex: 1,
+    difficulty: 2,
   },
   {
     id: 'cult-tchaikovsky-swan',
@@ -1267,6 +1446,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '발레 음악 "백조의 호수"의 작곡가는?',
     choices: ['베토벤', '모차르트', '차이콥스키', '라흐마니노프'],
     correctIndex: 2,
+    difficulty: 1,
     note: '초연(1877)은 대실패. 작곡가 사후에야 명작 인정. 본인은 결과를 못 봄.',
   },
   {
@@ -1275,6 +1455,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"돈키호테"를 쓴 작가는?',
     choices: ['단테', '괴테', '셰익스피어', '세르반테스'],
     correctIndex: 3,
+    difficulty: 2,
     note: '"최초의 근대 소설"로 평가받는 작품(1605/1615).',
   },
   {
@@ -1283,6 +1464,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"신곡"을 쓴 작가는?',
     choices: ['단테', '페트라르카', '보카치오', '호메로스'],
     correctIndex: 0,
+    difficulty: 2,
     note: '원제는 그냥 "Commedia(희극)". "Divina(신성한)"는 후세에 붙임.',
   },
   {
@@ -1291,6 +1473,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"일리아드"의 저자로 알려진 사람은?',
     choices: ['베르길리우스', '호메로스', '헤로도토스', '플라톤'],
     correctIndex: 1,
+    difficulty: 2,
   },
   {
     id: 'cult-faust',
@@ -1298,6 +1481,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"파우스트"를 쓴 독일 작가는?',
     choices: ['헤르만 헤세', '토마스 만', '괴테', '카프카'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'cult-war-peace',
@@ -1305,6 +1489,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"전쟁과 평화"를 쓴 러시아 작가는?',
     choices: ['도스토옙스키', '푸시킨', '체호프', '톨스토이'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'cult-crime-punishment',
@@ -1312,6 +1497,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"죄와 벌"을 쓴 작가는?',
     choices: ['도스토옙스키', '톨스토이', '푸시킨', '고골'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'cult-old-man-sea',
@@ -1319,6 +1505,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"노인과 바다"를 쓴 작가는?',
     choices: ['포크너', '헤밍웨이', '피츠제럴드', '스타인벡'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'cult-1984',
@@ -1326,6 +1513,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '소설 "1984"를 쓴 작가는?',
     choices: ['헉슬리', '카뮈', '조지 오웰', '사르트르'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'cult-harry-potter',
@@ -1333,6 +1521,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"해리포터" 시리즈의 작가는?',
     choices: ['톨킨', '루이스', '가이먼', 'J.K. 롤링'],
     correctIndex: 3,
+    difficulty: 1,
     note: '1편 원고가 12개 출판사에서 거절당함. 결국 작은 출판사에서 첫 출간.',
   },
   {
@@ -1341,6 +1530,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"반지의 제왕"을 쓴 작가는?',
     choices: ['톨킨', '롤링', 'C.S. 루이스', 'G.R.R. 마틴'],
     correctIndex: 0,
+    difficulty: 2,
     note: '톨킨은 "직접 만든 엘프어를 쓰기 위해 책을 썼다"고 농담조로 말한 적 있음.',
   },
   {
@@ -1349,6 +1539,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '야구 한 경기의 정규 이닝 수는?',
     choices: ['7이닝', '9이닝', '11이닝', '12이닝'],
     correctIndex: 1,
+    difficulty: 1,
     note: '19세기 초기 야구는 "21점 먼저 내는 팀 승리". 9이닝 표준은 1857년부터.',
   },
   {
@@ -1357,6 +1548,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '축구 한 팀이 한 경기에 출전하는 인원은?',
     choices: ['9명', '10명', '11명', '12명'],
     correctIndex: 2,
+    difficulty: 1,
     note: '초창기 영국 학교에서 한 반 학생 수에 맞춘 게 11명 기원설.',
   },
   {
@@ -1365,6 +1557,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '배구 한 팀이 코트에 서는 인원은?',
     choices: ['5명', '7명', '9명', '6명'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'cult-basketball-players',
@@ -1372,13 +1565,15 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '농구 한 팀이 코트에 서는 인원은?',
     choices: ['5명', '3명', '6명', '7명'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'cult-rugby-players',
     category: '문화',
-    question: '럭비 15인제의 한 팀 출전 인원은?',
+    question: '정통 럭비(럭비 유니언)의 한 팀 출전 인원은?',
     choices: ['11명', '15명', '13명', '18명'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'cult-marathon-distance',
@@ -1386,6 +1581,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '정식 마라톤의 공식 거리는?',
     choices: ['40km', '50km', '42.195km', '100km'],
     correctIndex: 2,
+    difficulty: 1,
     note: '1908년 런던 올림픽 때 영국 왕실 관람대에서 잘 보이도록 195m가 추가됨.',
   },
   {
@@ -1394,6 +1590,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '2020 하계 올림픽 개최 도시는? (실제 개최 2021)',
     choices: ['베이징', '파리', '리우', '도쿄'],
     correctIndex: 3,
+    difficulty: 1,
     note: '코로나로 사상 최초 1년 연기. 무관중 개최. 이름은 그대로 "Tokyo 2020".',
   },
   {
@@ -1402,6 +1599,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '2024 하계 올림픽 개최 도시는?',
     choices: ['파리', '도쿄', '로스앤젤레스', '베이징'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'cult-qatar-worldcup',
@@ -1409,6 +1607,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '2022 FIFA 월드컵 개최국은?',
     choices: ['러시아', '카타르', '미국', '호주'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'cult-pizza-origin',
@@ -1416,6 +1615,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '피자의 원산지로 알려진 나라는?',
     choices: ['프랑스', '그리스', '이탈리아', '미국'],
     correctIndex: 2,
+    difficulty: 1,
     note: '현대형 마르게리타는 1889년 나폴리. 토마토·모차렐라·바질 = 이탈리아 국기 색.',
   },
   {
@@ -1424,6 +1624,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '초밥(스시)의 원산지로 알려진 나라는?',
     choices: ['중국', '한국', '베트남', '일본'],
     correctIndex: 3,
+    difficulty: 1,
     note: '원형은 발효 보존식 "나레즈시". 현재의 니기리는 19세기 도쿄에서 정착.',
   },
 
@@ -1434,6 +1635,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '서울 시내 파란색 버스의 종류는?',
     choices: ['간선버스', '지선버스', '광역버스', '마을버스'],
     correctIndex: 0,
+    difficulty: 2,
     note: '파랑=간선(긴 거리), 초록=지선(동네), 빨강=광역(시외), 노랑=순환.',
   },
   {
@@ -1442,6 +1644,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한국식 짜장면이 처음 시작된 도시는?',
     choices: ['부산', '인천', '서울', '군산'],
     correctIndex: 1,
+    difficulty: 2,
     note: '1900년대 초 인천 차이나타운의 화교 식당(공화춘)에서 한국화된 음식.',
   },
   {
@@ -1450,6 +1653,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한국 교통신호등 위에서부터 색 순서는?',
     choices: ['빨강·초록·노랑', '빨강·노랑·초록', '노랑·빨강·초록', '초록·빨강·노랑'],
     correctIndex: 1,
+    difficulty: 2,
     note: '수직형은 빨강이 위, 가로형은 빨강이 가장 왼쪽 — 색맹·색약자 규칙.',
   },
   {
@@ -1458,6 +1662,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '남한에서 본류가 가장 긴 강은?',
     choices: ['한강', '낙동강', '금강', '영산강'],
     correctIndex: 1,
+    difficulty: 2,
     note: '낙동강 본류 510km vs 한강 494km. 단, 지류 포함 총 길이는 한강이 더 길다.',
   },
   {
@@ -1466,6 +1671,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '떡볶이의 본래 모습(궁중 떡볶이)은 어떤 양념?',
     choices: ['고추장', '간장', '카레', '된장'],
     correctIndex: 1,
+    difficulty: 2,
     note: '원래 궁중에서 간장에 볶던 음식. 매운 떡볶이는 1953년 마복림 할머니 신당동에서 시작.',
   },
   {
@@ -1474,6 +1680,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '충무김밥의 가장 큰 특징은?',
     choices: ['큰 사이즈', '속재료가 거의 없음', '매운맛', '비빔밥형'],
     correctIndex: 1,
+    difficulty: 1,
     note: '통영 항구에서 더운 날 김밥 속이 빨리 상하자, 김밥과 반찬을 따로 낸 게 시작.',
   },
   {
@@ -1482,7 +1689,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한반도 모양은 흔히 어떤 동물에 비유?',
     choices: ['호랑이', '토끼', '곰', '늑대'],
     correctIndex: 0,
-    note: '"토끼"는 일제강점기 일본이 약해 보이게 퍼뜨린 비유. 광복 후 호랑이로 다시 자리잡음.',
+    difficulty: 1,
+    note: '"토끼"는 1903년 일본 학자가 퍼뜨린 비유. 1908년 최남선이 호랑이로 반박.',
   },
   {
     id: 'kr-iata-icn',
@@ -1490,6 +1698,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '인천국제공항의 IATA 공항 코드는?',
     choices: ['INC', 'ICN', 'IAP', 'KOR'],
     correctIndex: 1,
+    difficulty: 2,
     note: 'ICN은 Incheon에서 따옴. 김포공항은 GMP, 제주는 CJU.',
   },
   {
@@ -1498,6 +1707,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한국에서 4월 14일은 무슨 날?',
     choices: ['화이트데이', '블랙데이', '발렌타인데이', '빼빼로데이'],
     correctIndex: 1,
+    difficulty: 1,
     note: '발렌타인·화이트데이에 못 받은 사람이 짜장면 먹는 비공식 풍습.',
   },
   {
@@ -1506,6 +1716,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '빼빼로데이는 몇 월 며칠?',
     choices: ['10월 10일', '11월 11일', '12월 12일', '9월 9일'],
     correctIndex: 1,
+    difficulty: 1,
     note: '1990년대 부산 중·고생들이 "빼빼로처럼 길고 가늘어지자"며 시작했다는 설.',
   },
   {
@@ -1514,7 +1725,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '어린이날은 몇 월 며칠?',
     choices: ['3월 1일', '5월 5일', '6월 6일', '7월 7일'],
     correctIndex: 1,
-    note: '1922년 방정환 선생이 처음 제정. 처음엔 5월 1일이었다가 1939년 5월 5일로.',
+    difficulty: 1,
+    note: '방정환 주도로 1923년 첫 행사(당시 5월 1일). 1946년부터 5월 5일로 고정.',
   },
   {
     id: 'kr-parents-day',
@@ -1522,6 +1734,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '어버이날은 몇 월 며칠?',
     choices: ['5월 5일', '5월 8일', '5월 15일', '5월 21일'],
     correctIndex: 1,
+    difficulty: 1,
     note: '원래 1956년 "어머니날"이었다가 1973년 어버이날로 통합.',
   },
   {
@@ -1530,6 +1743,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '스승의 날은 몇 월 며칠?',
     choices: ['5월 5일', '5월 8일', '5월 15일', '5월 25일'],
     correctIndex: 2,
+    difficulty: 2,
     note: '세종대왕 탄신일(양력). 청소년적십자단 활동에서 비롯된 풍습이 1965년 공식 지정.',
   },
   {
@@ -1538,7 +1752,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '개천절은 몇 월 며칠?',
     choices: ['10월 3일', '10월 9일', '9월 9일', '8월 15일'],
     correctIndex: 0,
-    note: '단군이 고조선을 세웠다는 BC 2333년 음력 10월 3일을 양력으로 환산.',
+    difficulty: 2,
+    note: '원래 음력 10월 3일 기념. 1949년 환산이 불가능해 그대로 양력 10월 3일로.',
   },
   {
     id: 'kr-hangul-day',
@@ -1546,6 +1761,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한글날은 몇 월 며칠?',
     choices: ['9월 9일', '10월 3일', '10월 9일', '11월 11일'],
     correctIndex: 2,
+    difficulty: 1,
     note: '1446년 훈민정음 반포일을 양력으로 환산.',
   },
   {
@@ -1554,6 +1770,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '평양냉면의 면은 주로 어떤 곡물로 만들까?',
     choices: ['밀가루', '쌀', '메밀', '옥수수'],
     correctIndex: 2,
+    difficulty: 2,
     note: '슴슴한 동치미 국물에 메밀면이 정통. 함흥냉면은 감자·고구마 전분 면.',
   },
   {
@@ -1562,6 +1779,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한국 일반 소주병의 전통 색깔은?',
     choices: ['투명', '갈색', '초록색', '파랑'],
     correctIndex: 2,
+    difficulty: 1,
     note: '두산이 1994년 친환경 이미지로 초록 채택, 이후 업계 표준이 됐다.',
   },
   {
@@ -1570,6 +1788,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '부산의 대표 수산시장은?',
     choices: ['자갈치시장', '노량진시장', '가락시장', '동대문시장'],
     correctIndex: 0,
+    difficulty: 1,
     note: '이름은 자갈이 깔린 갯벌에서 유래. 부산의 대표 관광지이자 영화 배경 단골.',
   },
   {
@@ -1578,6 +1797,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '서울 도심 북쪽에 자리한 국립공원 산은?',
     choices: ['북한산', '관악산', '도봉산', '청계산'],
     correctIndex: 0,
+    difficulty: 1,
     note: '"북한"은 분단의 북한이 아니라 "한강 북쪽 큰 산"이란 옛 이름.',
   },
   {
@@ -1586,6 +1806,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '제주도의 대표 특산 과일은?',
     choices: ['사과', '감귤', '배', '포도'],
     correctIndex: 1,
+    difficulty: 1,
     note: '삼국시대부터 진상품. 한라봉·천혜향 등 변종도 모두 제주발.',
   },
 
@@ -1596,6 +1817,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '역사상 가장 짧았다고 알려진 전쟁은?',
     choices: ['영국·잔지바르 전쟁', '6일 전쟁', '청·일 전쟁', '미·서 전쟁'],
     correctIndex: 0,
+    difficulty: 3,
     note: '1896년 8월 27일, 38분 만에 잔지바르가 항복. 기네스북 공식 기록.',
   },
   {
@@ -1604,14 +1826,16 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: "이름이 '백년전쟁'인데 실제로 몇 년 동안?",
     choices: ['약 80년', '약 100년', '약 110년', '약 116년'],
     correctIndex: 3,
+    difficulty: 3,
     note: '1337-1453, 휴전기를 포함한 단속적 전쟁. "백년전쟁"이란 이름은 후세에 붙여짐.',
   },
   {
     id: 'world-coldest-place',
     category: '일반상식',
-    question: '지구 최저 기온이 측정된 대륙은?',
+    question: '지구 최저 기온 -89.2°C가 기록된 곳은?',
     choices: ['북극', '남극', '시베리아', '그린란드'],
     correctIndex: 1,
+    difficulty: 1,
     note: '1983년 남극 보스토크 기지 -89.2°C. 인공위성 측정으로는 -98°C까지.',
   },
   {
@@ -1620,6 +1844,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세계에서 가장 건조한 사막은?',
     choices: ['사하라', '고비', '아타카마', '칼라하리'],
     correctIndex: 2,
+    difficulty: 3,
     note: '칠레 북부. 일부 지역은 측정 시작 후 비가 한 번도 안 온 곳도 있다.',
   },
   {
@@ -1628,6 +1853,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '만리장성의 총 길이는 약?',
     choices: ['약 5천km', '약 1만km', '약 2만km', '약 5만km'],
     correctIndex: 2,
+    difficulty: 3,
     note: '역대 모든 시대 장성 합산 21,196km. 명나라 시대 장성만은 약 8,800km.',
   },
   {
@@ -1636,6 +1862,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세계에서 가장 깊은 해구는?',
     choices: ['마리아나 해구', '푸에르토리코 해구', '자바 해구', '통가 해구'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'world-niagara-countries',
@@ -1643,6 +1870,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '나이아가라 폭포가 걸쳐 있는 두 나라는?',
     choices: ['미국·멕시코', '미국·캐나다', '캐나다·러시아', '미국·아일랜드'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'world-grand-canyon-state',
@@ -1650,6 +1878,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '그랜드 캐니언이 위치한 미국의 주는?',
     choices: ['콜로라도', '네바다', '애리조나', '유타'],
     correctIndex: 2,
+    difficulty: 3,
     note: '길이 446km, 가장 깊은 곳 1.6km. 콜로라도강이 600만 년 깎은 작품.',
   },
   {
@@ -1658,6 +1887,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '에펠탑의 대략적인 높이는?',
     choices: ['약 180m', '약 250m', '약 330m', '약 500m'],
     correctIndex: 2,
+    difficulty: 2,
     note: '안테나 포함 약 330m. 1889년 완공 당시 세계 최고 건축물.',
   },
   {
@@ -1666,7 +1896,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '자유의 여신상은 어느 나라가 미국에 선물?',
     choices: ['영국', '프랑스', '독일', '이탈리아'],
     correctIndex: 1,
-    note: '미국 독립 100주년(1876) 선물. 실제 봉헌은 1886년. 설계는 에펠탑의 에펠.',
+    difficulty: 2,
+    note: '독립 100주년 기념 선물. 조각은 바르톨디, 내부 철골은 에펠탑의 에펠 작품.',
   },
   {
     id: 'world-pyramid-egypt',
@@ -1674,6 +1905,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '쿠푸 왕의 대피라미드가 있는 나라는?',
     choices: ['이집트', '멕시코', '수단', '페루'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'world-colosseum-city',
@@ -1681,6 +1913,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '콜로세움이 있는 도시는?',
     choices: ['아테네', '로마', '이스탄불', '알렉산드리아'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'world-eiffel-year',
@@ -1688,7 +1921,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '에펠탑이 완공된 해는?',
     choices: ['1789년', '1900년', '1889년', '1925년'],
     correctIndex: 2,
-    note: '처음엔 "흉물"이라며 시민 1만 인 서명운동까지. 지금은 파리의 상징.',
+    difficulty: 3,
+    note: '모파상 등 예술가 40여 명이 "철 괴물"이라며 반대 성명. 지금은 파리의 상징.',
   },
   {
     id: 'world-most-spoken',
@@ -1696,14 +1930,16 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '세계에서 모국어 사용자가 가장 많은 언어는?',
     choices: ['영어', '중국어(만다린)', '스페인어', '힌디어'],
     correctIndex: 1,
+    difficulty: 2,
     note: '약 9억 명. 영어는 모국어 4억 + 제2언어 합치면 가장 많다.',
   },
   {
     id: 'world-time-zones',
     category: '일반상식',
-    question: '지구의 표준 시간대는 총 몇 개?',
+    question: '지구를 경도 15도씩 나눈 이론상 시간대는 몇 개?',
     choices: ['12개', '24개', '36개', '48개'],
     correctIndex: 1,
+    difficulty: 2,
   },
   {
     id: 'world-equator-name',
@@ -1711,6 +1947,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '국가명 자체가 "적도"를 뜻하는 남미 나라는?',
     choices: ['콜롬비아', '에콰도르', '베네수엘라', '페루'],
     correctIndex: 1,
+    difficulty: 2,
   },
   {
     id: 'world-tallest-building',
@@ -1718,6 +1955,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '현존 세계 최고층 빌딩은?',
     choices: ['부르즈 할리파', '상하이 타워', '도쿄 스카이트리', '엠파이어 스테이트'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'world-mona-lisa-museum',
@@ -1725,6 +1963,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '모나리자가 전시된 미술관은?',
     choices: ['프라도', '루브르', '우피치', '메트로폴리탄'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'world-louvre-pyramid',
@@ -1732,6 +1971,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '루브르 박물관 입구의 유리 구조물 모양은?',
     choices: ['큐브', '구체', '피라미드', '원기둥'],
     correctIndex: 2,
+    difficulty: 1,
     note: '1989년 완공. 처음엔 "루브르를 망쳤다" 비난, 지금은 파리 명물.',
   },
   {
@@ -1740,6 +1980,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '지중해에서 가장 큰 섬은?',
     choices: ['크레타', '코르시카', '사르데냐', '시칠리아'],
     correctIndex: 3,
+    difficulty: 3,
   },
 
   // ── 과학 v2 (반전 트리비아) ───────────────────────────────────
@@ -1749,6 +1990,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '유리는 물리학적으로 어떤 상태?',
     choices: ['액체', '비결정질 고체', '기체', '플라스마'],
     correctIndex: 1,
+    difficulty: 2,
     note: '"유리는 천천히 흐르는 액체"는 거짓. 옛 성당 유리 아래쪽이 두꺼운 건 옛 가공법 때문.',
   },
   {
@@ -1757,6 +1999,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '문어의 심장 개수는?',
     choices: ['1개', '2개', '3개', '5개'],
     correctIndex: 2,
+    difficulty: 2,
     note: '1개는 전신 순환, 2개는 아가미 전용. 헤엄칠 땐 메인 심장이 멈춤.',
   },
   {
@@ -1765,6 +2008,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '상어의 골격은 무엇으로 이루어져 있나?',
     choices: ['뼈', '연골', '키틴', '근육'],
     correctIndex: 1,
+    difficulty: 2,
     note: '연골이라 화석으로 거의 안 남고, 단단한 이빨만 잔뜩 발견된다.',
   },
   {
@@ -1773,6 +2017,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '공기 중 소리의 속도는 약?',
     choices: ['초속 30m', '초속 340m', '초속 3km', '초속 30km'],
     correctIndex: 1,
+    difficulty: 1,
     note: '15°C 기준 약 340m/s. 온도가 1°C 오를 때마다 약 0.6m/s 빨라진다.',
   },
   {
@@ -1781,6 +2026,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '낙타의 혹 안에 들어 있는 것은?',
     choices: ['물', '지방', '근육', '뼈'],
     correctIndex: 1,
+    difficulty: 2,
     note: '"물 저장소"는 잘못된 통설. 지방을 분해할 때 부산물로 물도 만들어진다.',
   },
   {
@@ -1789,7 +2035,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '천연 꿀을 잘 보관하면?',
     choices: ['1년 안에 상함', '5년이면 상함', '10년이면 상함', '거의 상하지 않음'],
     correctIndex: 3,
-    note: '이집트 피라미드의 3,000년 된 꿀도 먹을 수 있었다. 수분 함량이 매우 낮아서.',
+    difficulty: 1,
+    note: '수분이 적고 산성이라 세균이 못 자람. 이집트 고분의 3,000년 꿀도 멀쩡했다고.',
   },
   {
     id: 'sci-banana-plant',
@@ -1797,6 +2044,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '바나나 나무는 식물학적으로 무엇?',
     choices: ['나무', '풀(초본)', '덩굴', '이끼'],
     correctIndex: 1,
+    difficulty: 2,
     note: '줄기처럼 보이는 건 잎자루의 다발. 진짜 줄기는 땅속에 있다.',
   },
   {
@@ -1805,6 +2053,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '토마토는 식물학적으로 무엇?',
     choices: ['채소', '과일(열매)', '곡물', '콩과'],
     correctIndex: 1,
+    difficulty: 1,
     note: '단, 1893년 미국 대법원은 관세 분쟁에서 "채소"로 판결. 일상에선 채소 취급.',
   },
   {
@@ -1813,6 +2062,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '땅콩은 식물학적으로 무엇에 속할까?',
     choices: ['견과류', '콩과', '곡물', '과일'],
     correctIndex: 1,
+    difficulty: 2,
     note: '땅 위에서 꽃을 피우고 땅속에서 열매를 맺는 자가 매장형 콩과 식물.',
   },
   {
@@ -1821,6 +2071,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '코끼리의 임신 기간은 약?',
     choices: ['9개월', '12개월', '18개월', '22개월'],
     correctIndex: 3,
+    difficulty: 3,
     note: '포유류 중 가장 길다. 새끼는 100kg 안팎으로 태어남.',
   },
   {
@@ -1829,6 +2080,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '사람을 무는 모기는 주로?',
     choices: ['수컷', '암컷', '둘 다 같이', '새끼'],
     correctIndex: 1,
+    difficulty: 1,
     note: '산란용 단백질이 필요해 피를 빤다. 수컷은 평생 꽃꿀만 먹음.',
   },
   {
@@ -1837,6 +2089,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '"박쥐는 눈이 안 보인다"는?',
     choices: ['사실', '대부분 잘 본다', '흑백만 본다', '자외선만 본다'],
     correctIndex: 1,
+    difficulty: 2,
     note: '대부분 야간 시야가 사람보다 좋다. 음파 탐지(반향)는 어두울 때 보조 수단.',
   },
   {
@@ -1845,6 +2098,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '우리 몸 정맥 안의 피 색깔은?',
     choices: ['파란색', '보라색', '빨간색', '검은색'],
     correctIndex: 2,
+    difficulty: 2,
     note: '파래 보이는 건 피부를 통과하며 빛 산란이 파란빛만 반사하기 때문.',
   },
   {
@@ -1853,6 +2107,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '높은 산에서 물의 끓는점이 낮아지는 이유는?',
     choices: ['기압이 낮아서', '산소가 적어서', '햇빛이 약해서', '물이 부족해서'],
     correctIndex: 0,
+    difficulty: 1,
     note: '에베레스트 정상에선 약 70°C에서 끓는다. 라면이 잘 안 익는 이유.',
   },
   {
@@ -1861,6 +2116,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '사람 몸에서 가장 큰 장기는?',
     choices: ['간', '폐', '피부', '심장'],
     correctIndex: 2,
+    difficulty: 1,
     note: '성인 기준 면적 약 2m², 무게 약 4kg. 간보다 두 배 이상 무겁다.',
   },
 
@@ -1871,6 +2127,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '미슐랭 가이드의 최고 등급 별은 몇 개?',
     choices: ['1개', '2개', '3개', '5개'],
     correctIndex: 2,
+    difficulty: 1,
     note: '타이어 회사 미슐랭이 자동차 여행 장려용으로 1900년 무료 가이드 시작.',
   },
   {
@@ -1879,6 +2136,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '아카데미 시상식 트로피의 별명은?',
     choices: ['오스카', '골든글로브', '그래미', '에미'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'cult-cannes-palme',
@@ -1886,6 +2144,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '칸 영화제의 최고상은?',
     choices: ['황금사자상', '황금종려상', '금곰상', '그랑프리'],
     correctIndex: 1,
+    difficulty: 1,
     note: '봉준호 감독이 2019년 "기생충"으로 한국 최초 수상.',
   },
   {
@@ -1894,6 +2153,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '베니스 영화제의 최고상은?',
     choices: ['황금종려상', '금곰상', '황금사자상', '그랑프리'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'cult-berlin-bear',
@@ -1901,6 +2161,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '베를린 영화제의 최고상은?',
     choices: ['황금종려상', '황금사자상', '그랑프리', '금곰상'],
     correctIndex: 3,
+    difficulty: 2,
   },
   {
     id: 'cult-wimbledon-surface',
@@ -1908,7 +2169,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '테니스 윔블던 대회의 코트 표면은?',
     choices: ['잔디', '클레이', '하드', '카펫'],
     correctIndex: 0,
-    note: '하루 약 8mm 자라는 잔디를 매일 정확히 깎아 8mm 길이로 유지.',
+    difficulty: 1,
+    note: '대회 기간 매일 잔디를 깎아 정확히 8mm 높이로 유지한다.',
   },
   {
     id: 'cult-french-open-surface',
@@ -1916,6 +2178,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '프랑스 오픈(롤랑 가로스)의 코트 표면은?',
     choices: ['잔디', '클레이(흙)', '하드', '카펫'],
     correctIndex: 1,
+    difficulty: 1,
     note: '벽돌 가루를 다진 진짜 흙. 라파엘 나달이 이 대회에서만 14회 우승.',
   },
   {
@@ -1924,6 +2187,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한 경기에서 한 선수가 3골 넣는 것을?',
     choices: ['더블', '트리플', '해트트릭', '골든골'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'cult-2-yellow',
@@ -1931,6 +2195,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '축구 한 경기에서 옐로카드 2장이면?',
     choices: ['경고', '페널티', '무효', '퇴장(레드)'],
     correctIndex: 3,
+    difficulty: 1,
   },
   {
     id: 'cult-cycle-hit',
@@ -1938,6 +2203,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '야구 한 경기에 단·2·3·홈런 모두 친 것은?',
     choices: ['사이클링 히트', '그랜드슬램', '노히트 노런', '퍼펙트 게임'],
     correctIndex: 0,
+    difficulty: 1,
   },
   {
     id: 'cult-no-hitter',
@@ -1945,6 +2211,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '야구에서 안타 한 개도 안 맞고 완투한 것은?',
     choices: ['퍼펙트 게임', '노히트 노런', '완봉', '사이클링 히트'],
     correctIndex: 1,
+    difficulty: 2,
     note: '퍼펙트 게임은 한 단계 더 어려움 — 노히트는 볼넷·실책 허용 가능.',
   },
   {
@@ -1953,6 +2220,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: 'FIBA 농구의 3점 라인 거리는 약?',
     choices: ['4.5m', '5.5m', '6.75m', '8m'],
     correctIndex: 2,
+    difficulty: 3,
   },
   {
     id: 'cult-golf-eagle',
@@ -1960,6 +2228,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '골프에서 파보다 2타 적게 친 것은?',
     choices: ['이글', '버디', '알바트로스', '보기'],
     correctIndex: 0,
+    difficulty: 2,
   },
   {
     id: 'cult-golf-hole-in-one',
@@ -1967,6 +2236,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '골프 한 번에 홀에 넣은 것을?',
     choices: ['이글', '홀인원', '콘도르', '알바트로스'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'cult-chess-pawns',
@@ -1974,6 +2244,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '체스 한 진영의 폰(보병) 개수는?',
     choices: ['6개', '7개', '8개', '10개'],
     correctIndex: 2,
+    difficulty: 2,
   },
   {
     id: 'cult-go-board',
@@ -1981,6 +2252,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '바둑판은 가로세로 몇 줄?',
     choices: ['9줄', '13줄', '17줄', '19줄'],
     correctIndex: 3,
+    difficulty: 1,
     note: '교차점 361개. 한 판의 경우의 수가 우주 원자 수보다 많다.',
   },
   {
@@ -1989,6 +2261,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '스도쿠 한 판은 모두 몇 칸?',
     choices: ['49칸', '64칸', '81칸', '100칸'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'cult-rubik-colors',
@@ -1996,6 +2269,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '루빅스 큐브의 색깔 종류는?',
     choices: ['4가지', '6가지', '8가지', '12가지'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'cult-piano-keys',
@@ -2003,6 +2277,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '표준 피아노의 건반 수는?',
     choices: ['64개', '72개', '88개', '100개'],
     correctIndex: 2,
+    difficulty: 2,
     note: '흰건반 52 + 검은건반 36 = 88. 7옥타브와 좀 더.',
   },
   {
@@ -2011,7 +2286,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '표준 피아노의 검은 건반 수는?',
     choices: ['24개', '32개', '36개', '48개'],
     correctIndex: 2,
-    note: '한 옥타브에 5개 × 7옥타브 + 1 = 36. (정확한 옥타브 계산)',
+    difficulty: 3,
+    note: '한 옥타브에 검은건반 5개 × 7옥타브 + 1 = 36.',
   },
   {
     id: 'cult-violin-strings',
@@ -2019,6 +2295,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '바이올린의 현 개수는?',
     choices: ['3개', '4개', '5개', '6개'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'cult-guitar-strings',
@@ -2026,6 +2303,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '일반 어쿠스틱 기타의 현 개수는?',
     choices: ['4개', '5개', '6개', '8개'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'cult-card-deck',
@@ -2033,6 +2311,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '표준 트럼프 카드 한 벌(조커 제외)은 몇 장?',
     choices: ['48장', '50장', '52장', '54장'],
     correctIndex: 2,
+    difficulty: 1,
   },
   {
     id: 'cult-bingo-cells',
@@ -2040,14 +2319,16 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '5×5 빙고판의 칸 수는?',
     choices: ['16칸', '25칸', '36칸', '49칸'],
     correctIndex: 1,
+    difficulty: 1,
   },
   {
     id: 'cult-french-fries-origin',
     category: '문화',
-    question: '감자튀김(프렌치 프라이)의 원조 국가는?',
+    question: "'프렌치 프라이'의 원조로 널리 알려진 나라는?",
     choices: ['프랑스', '벨기에', '미국', '독일'],
     correctIndex: 1,
-    note: '1차 세계대전 때 미군이 프랑스어 쓰는 벨기에 군인을 프랑스인으로 오해. 이름은 프렌치, 원조는 벨기에.',
+    difficulty: 2,
+    note: '미군이 프랑스어 쓰는 벨기에군을 프랑스인으로 오해했다는 설. 원조 논쟁 중.',
   },
 
   // ── v3: "이런것도 몰랐어?" 트리비아 (모든 항목 note 포함) ───────
@@ -2057,15 +2338,17 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: "한국의 '노래방'을 영어권에서 흔히 부르는 말은?",
     choices: ['singroom', 'karaoke', 'song café', 'voice bar'],
     correctIndex: 1,
+    difficulty: 1,
     note: '일본 가라오케(空オケ=빈 오케스트라)에서 유래. 한국이 노래방 룸 형식으로 발전시킴.',
   },
   {
     id: 'kr-namsan-name',
     category: '한국상식',
-    question: '서울 남산타워의 정식 명칭은?',
-    choices: ['남산타워', 'N서울타워', '서울타워', '한강타워'],
+    question: '2005년 리뉴얼 때 남산타워에 붙은 이름은?',
+    choices: ['남산타워', 'N서울타워', '서울스카이', '한강타워'],
     correctIndex: 1,
-    note: '2005년 리뉴얼하며 N서울타워로 개명. N은 Namsan/New/Newest 등 다중 의미.',
+    difficulty: 2,
+    note: '2015년부터 건물 공식 명칭은 남산서울타워, N서울타워는 전망대 브랜드.',
   },
   {
     id: 'kr-dolhareubang',
@@ -2073,6 +2356,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '제주의 돌로 만든 인물상 이름은?',
     choices: ['돌하르방', '미륵상', '인면석', '망주석'],
     correctIndex: 0,
+    difficulty: 1,
     note: '"하르방"은 제주 사투리로 할아버지. 마을 입구에 세워 액운을 막는다고 믿었다.',
   },
   {
@@ -2081,7 +2365,8 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '한국 전통 바닥 난방 방식의 이름은?',
     choices: ['화롯대', '난로', '온돌', '구들목'],
     correctIndex: 2,
-    note: '아궁이에서 데운 연기로 방바닥 돌(구들)을 데움. 유네스코 인류무형유산 후보.',
+    difficulty: 1,
+    note: '아궁이에서 데운 연기로 방바닥 돌(구들)을 데움. 2018년 국가무형문화재 지정.',
   },
   {
     id: 'kr-arirang-unesco',
@@ -2089,6 +2374,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: "'아리랑'이 등재된 유네스코 분류는?",
     choices: ['세계유산', '인류무형문화유산', '세계기록유산', '자연유산'],
     correctIndex: 1,
+    difficulty: 2,
     note: '2012년 등재. 김치(2013), 씨름(2018) 등도 인류무형유산.',
   },
 
@@ -2098,15 +2384,17 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '바티칸 시국의 총 인구는 약?',
     choices: ['약 800명', '약 1만 명', '약 5만 명', '약 10만 명'],
     correctIndex: 0,
+    difficulty: 2,
     note: '국적이 바티칸인 사람 약 800명. 대부분 성직자·근위병.',
   },
   {
     id: 'world-nobel-cities',
     category: '일반상식',
-    question: '노벨상 시상식이 열리는 도시는?',
-    choices: ['스톡홀름(평화상은 오슬로)', '오슬로 단독', '코펜하겐', '헬싱키'],
+    question: '평화상을 뺀 노벨상 시상식이 열리는 도시는?',
+    choices: ['스톡홀름', '오슬로', '코펜하겐', '헬싱키'],
     correctIndex: 0,
-    note: '스웨덴 스톡홀름에서 모두 시상. 단 평화상만 노르웨이 오슬로 — 노벨의 유언.',
+    difficulty: 2,
+    note: '평화상만 노르웨이 오슬로에서 시상 — 노벨의 유언에 따른 것.',
   },
   {
     id: 'world-canada-languages',
@@ -2114,6 +2402,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '캐나다의 두 공용어는?',
     choices: ['영어 단독', '영어·프랑스어', '영어·스페인어', '영어·독일어'],
     correctIndex: 1,
+    difficulty: 1,
     note: '연방 차원 공용어. 퀘벡 주는 프랑스어가 사실상 단독 공용어.',
   },
   {
@@ -2122,6 +2411,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '인구당 사우나가 가장 많은 나라는?',
     choices: ['노르웨이', '핀란드', '스웨덴', '아이슬란드'],
     correctIndex: 1,
+    difficulty: 1,
     note: '인구 약 550만 명에 사우나가 약 200만 개. 가정마다 거의 하나꼴.',
   },
   {
@@ -2130,6 +2420,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '현존 세계 최고 높이의 동상은?',
     choices: ['자유의 여신상', '인도 통합의 상', '리우 그리스도', '일본 우시쿠대불'],
     correctIndex: 1,
+    difficulty: 3,
     note: '높이 182m. 인도 부총리 사르다르 파텔의 동상으로 2018년 완공.',
   },
 
@@ -2139,6 +2430,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '알을 낳는 희귀 포유류는?',
     choices: ['캥거루', '오리너구리', '코알라', '포섬'],
     correctIndex: 1,
+    difficulty: 1,
     note: '발견 당시 박제 보고 학자들이 "가짜 동물"로 의심. 부리·물갈퀴·독발톱·알 다 갖춤.',
   },
   {
@@ -2147,15 +2439,17 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '딸기 표면의 작은 알갱이는?',
     choices: ['진짜 씨앗(과실)', '꽃받침', '솜털', '영양 알갱이'],
     correctIndex: 0,
+    difficulty: 2,
     note: '딸기는 사실 "복합 화탁(받침)". 우리가 먹는 빨간 부분은 가짜 열매, 진짜 열매는 표면 알갱이.',
   },
   {
     id: 'sci-snail-teeth',
     category: '과학',
     question: '달팽이의 이빨 개수는 약?',
-    choices: ['0개', '30개', '200개', '수만 개'],
+    choices: ['0개', '30개', '200개', '1만 개 이상'],
     correctIndex: 3,
-    note: '혀에 박힌 "라둘라(치설)"에 미세 이빨이 빼곡. 종에 따라 1만~2만 개.',
+    difficulty: 2,
+    note: '혀에 박힌 "라둘라(치설)"에 미세 이빨이 빼곡. 종에 따라 1만~2만5천 개.',
   },
   {
     id: 'sci-horse-sleep',
@@ -2163,6 +2457,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '말은 주로 어떻게 자나?',
     choices: ['눕기만 함', '서서만 함', '서서·누워서 둘 다', '거의 안 잠'],
     correctIndex: 2,
+    difficulty: 2,
     note: '평소엔 서서 졸지만 깊은 REM 수면은 누워야만 가능. 둘 다 한다.',
   },
   {
@@ -2171,6 +2466,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '홍학이 분홍색인 이유는?',
     choices: ['유전', '먹이(새우·조류)', '햇빛 노출', '짝짓기 신호'],
     correctIndex: 1,
+    difficulty: 2,
     note: '동물원에서 새우·조류 안 주면 흰색이 된다. 색소가 깃털에 축적.',
   },
   {
@@ -2179,14 +2475,16 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '닭이 한 번에 날 수 있는 최장 기록은?',
     choices: ['0초(못 남)', '약 13초', '약 1분', '약 5분'],
     correctIndex: 1,
-    note: '1949년 측정. 거리 약 90m. 하늘을 나는 새의 후예지만 비행 능력은 거의 사라짐.',
+    difficulty: 2,
+    note: '13초는 널리 알려진 기록. 기네스 공인 최장 비행 거리는 192m(1985년).',
   },
   {
     id: 'sci-spider-not-insect',
     category: '과학',
     question: '거미는 곤충일까?',
-    choices: ['곤충이다', '곤충이 아니다(거미강)', '곤충의 친척', '미생물'],
+    choices: ['곤충이다', '곤충이 아니다', '갑각류다', '연체동물이다'],
     correctIndex: 1,
+    difficulty: 1,
     note: '곤충은 다리 6개·몸 3분절. 거미는 다리 8개·몸 2분절이라 거미강(節肢動物 거미目).',
   },
   {
@@ -2195,6 +2493,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '진주는 어떻게 만들어지나?',
     choices: ['조개의 알', '조개의 방어 분비물', '모래 입자가 굳음', '화석화'],
     correctIndex: 1,
+    difficulty: 2,
     note: '이물질이 조개에 들어오면 막을 분비해 감싸는 방어 반응. 그 막이 굳어 진주.',
   },
 
@@ -2204,6 +2503,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '제임스 본드의 코드명은?',
     choices: ['001', '003', '007', '010'],
     correctIndex: 2,
+    difficulty: 1,
     note: '원작자 이안 플레밍이 "외우기 쉬운 숫자"로 골랐다고. 00은 살인 면허 등급.',
   },
   {
@@ -2212,6 +2512,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '미키 마우스가 첫 등장한 해는?',
     choices: ['1928년', '1937년', '1955년', '1966년'],
     correctIndex: 0,
+    difficulty: 3,
     note: '1928년 단편 "증기선 윌리". 디즈니의 첫 동기화 사운드 애니메이션.',
   },
   {
@@ -2220,6 +2521,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '메이저리그 야구공의 실밥 수는?',
     choices: ['88개', '108개', '144개', '222개'],
     correctIndex: 1,
+    difficulty: 3,
     note: '108땀이 표준. 변형 그립으로 변화구 종류가 갈린다.',
   },
   {
@@ -2228,6 +2530,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '현대 TV·동영상의 표준 화면비는?',
     choices: ['4:3', '16:9', '21:9', '1:1'],
     correctIndex: 1,
+    difficulty: 1,
     note: '4:3은 옛 브라운관 표준. 16:9는 영화관 비율과 거실 시청 절충.',
   },
   {
@@ -2236,6 +2539,7 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: '표준 영문 키보드 배열의 이름은?',
     choices: ['QWERTY', 'ASDF', 'ABCDEF', 'KEYBOARD'],
     correctIndex: 0,
+    difficulty: 1,
     note: '왼쪽 위 6개 글자에서 따옴. 1873년 타자기 시대에 자리잡음.',
   },
   {
@@ -2244,25 +2548,620 @@ export const TRIVIA_POOL: readonly TriviaQuestion[] = [
     question: "'루비콘 강을 건너다'의 의미는?",
     choices: ['화해하다', '돌이킬 수 없는 결정', '여행을 시작하다', '끝을 맺다'],
     correctIndex: 1,
+    difficulty: 1,
     note: 'BC 49년 카이사르가 군대를 끌고 루비콘 강을 건너 내전 시작. 그 행위 자체가 반역.',
   },
   {
     id: 'cult-pyramid-builder',
     category: '문화',
     question: '이집트 피라미드를 지은 사람들은?',
-    choices: ['노예', '고용된 노동자', '외계인', '죄수'],
+    choices: ['노예', '고용된 노동자', '전쟁 포로', '죄수'],
     correctIndex: 1,
+    difficulty: 2,
     note: '최근 발굴로 봉급 받고 식사 제공받는 정식 노동자였음 확인. 영화의 채찍 장면은 허구.',
   },
+
+  // ── v4: 한국상식 보강 (적대적 검증 통과분) ──────────────────
+  {
+    id: 'kr-jamo-names',
+    category: '한국상식',
+    question: "'기역·니은' 같은 자음 이름이 처음 실린 책은?",
+    choices: ['훈민정음 해례본', '훈몽자회', '동국정운', '용비어천가'],
+    correctIndex: 1,
+    difficulty: 3,
+    note: '1527년 최세진의 한자 학습서. 자모 이름이 실린 최초의 문헌으로 꼽힌다.',
+  },
+  {
+    id: 'kr-anthem-third-verse',
+    category: '한국상식',
+    question: "애국가에서 '가을 하늘 공활한데'는 몇 절?",
+    choices: ['1절', '2절', '3절', '4절'],
+    correctIndex: 2,
+    difficulty: 3,
+    note: "2절은 '남산 위에 저 소나무', 4절은 '이 기상과 이 맘으로'.",
+  },
+  {
+    id: 'kr-north-gate',
+    category: '한국상식',
+    question: '한양도성 사대문 중 북대문의 이름은?',
+    choices: ['창의문', '돈의문', '혜화문', '숙정문'],
+    correctIndex: 3,
+    difficulty: 3,
+    note: '돈의문은 서대문, 창의문·혜화문은 사소문. 숙정문은 오래 닫아뒀다고 전한다.',
+  },
+  {
+    id: 'kr-baeheullim-column',
+    category: '한국상식',
+    question: '부석사 무량수전 기둥처럼 가운데가 불룩한 기법은?',
+    choices: ['배흘림기둥', '민흘림기둥', '원통기둥', '귀솟음'],
+    correctIndex: 0,
+    difficulty: 3,
+    note: '가운데가 가늘어 보이는 착시를 잡는 기법. 그리스 신전의 엔타시스와 비슷하다.',
+  },
+  {
+    id: 'kr-expressway-route-1',
+    category: '한국상식',
+    question: '고속국도 1호선에 해당하는 고속도로는?',
+    choices: ['경인고속도로', '경부고속도로', '영동고속도로', '호남고속도로'],
+    correctIndex: 1,
+    difficulty: 3,
+    note: '1970년 전 구간 개통. 가장 먼저 뚫린 고속도로는 1968년 경인고속도로.',
+  },
+  {
+    id: 'kr-first-solar-term',
+    category: '한국상식',
+    question: '24절기 가운데 가장 첫 번째 절기는?',
+    choices: ['동지', '우수', '입춘', '춘분'],
+    correctIndex: 2,
+    difficulty: 2,
+    note: '태양 황경 315도, 양력 2월 4일 무렵. 설날보다 앞서는 해도 많다.',
+  },
+  {
+    id: 'kr-obangsaek-center',
+    category: '한국상식',
+    question: '오방색에서 중앙을 상징하는 색은?',
+    choices: ['청색', '백색', '흑색', '황색'],
+    correctIndex: 3,
+    difficulty: 3,
+    note: '동쪽은 청, 서쪽은 백, 남쪽은 적, 북쪽은 흑, 그리고 가운데가 황.',
+  },
+  {
+    id: 'kr-dangmyeon-starch',
+    category: '한국상식',
+    question: '잡채에 넣는 당면의 주원료는?',
+    choices: ['고구마 전분', '밀가루', '쌀가루', '녹두 전분'],
+    correctIndex: 0,
+    difficulty: 3,
+    note: '녹두로 뽑는 중국식 당면과 달리 한국 당면은 고구마 전분이 주류.',
+  },
+  {
+    id: 'kr-yut-animals',
+    category: '한국상식',
+    question: '윷놀이의 도·개·걸·윷·모는 본래 무엇의 이름?',
+    choices: ['별자리', '가축', '곡식', '방위'],
+    correctIndex: 1,
+    difficulty: 3,
+    note: '도=돼지, 개=개, 걸=양, 윷=소, 모=말에서 왔다는 풀이가 널리 알려져 있다.',
+  },
+  {
+    id: 'kr-taekwondo-olympic',
+    category: '한국상식',
+    question: '태권도가 올림픽 정식종목이 된 첫 대회는?',
+    choices: ['1988 서울', '1992 바르셀로나', '2000 시드니', '2004 아테네'],
+    correctIndex: 2,
+    difficulty: 3,
+    note: '1988 서울과 1992 바르셀로나 때는 시범종목이었다.',
+  },
+  {
+    id: 'kr-pansori-aniri',
+    category: '한국상식',
+    question: '판소리에서 노래 대신 말로 풀어가는 대목은?',
+    choices: ['발림', '추임새', '더늠', '아니리'],
+    correctIndex: 3,
+    difficulty: 3,
+    note: "몸짓은 발림, 고수와 청중의 '얼쑤'는 추임새, 명창의 장기 대목은 더늠.",
+  },
+  {
+    id: 'kr-half-mast',
+    category: '한국상식',
+    question: '조의를 표할 때 태극기를 다는 방법은?',
+    choices: ['깃면 너비만큼 내림', '깃대 절반까지 내림', '검은 천을 함께 단다', '거꾸로 매단다'],
+    correctIndex: 0,
+    difficulty: 3,
+    note: '국기법 시행령 기준. 깃대가 짧으면 알아볼 수 있을 만큼 최대한 내려 단다.',
+  },
+
+  // ── v4: 과학 보강 (적대적 검증 통과분) ────────────────────
+  {
+    id: 'sci-hottest-planet',
+    category: '과학',
+    question: '태양계에서 표면이 가장 뜨거운 행성은?',
+    choices: ['수성', '화성', '목성', '금성'],
+    correctIndex: 3,
+    difficulty: 2,
+    note: '약 465°C. 두꺼운 이산화탄소 대기의 온실효과 때문에 수성보다 더 뜨겁다.',
+  },
+  {
+    id: 'sci-chimborazo',
+    category: '과학',
+    question: '지구 중심에서 가장 멀리 떨어진 산 정상은?',
+    choices: ['에베레스트', 'K2', '침보라소', '킬리만자로'],
+    correctIndex: 2,
+    difficulty: 3,
+    note: '지구가 적도 쪽으로 부풀어 있어 적도 근처 에콰도르의 침보라소가 더 멀다.',
+  },
+  {
+    id: 'sci-lightning-temp',
+    category: '과학',
+    question: '번개가 지나간 자리의 공기 온도는 약?',
+    choices: ['약 300°C', '약 3,000°C', '약 3만°C', '약 30만°C'],
+    correctIndex: 2,
+    difficulty: 3,
+    note: '약 3만°C — 태양 표면(약 5,500°C)보다 다섯 배 넘게 뜨겁다.',
+  },
+  {
+    id: 'sci-water-max-density',
+    category: '과학',
+    question: '순수한 물의 밀도가 가장 커지는 온도는?',
+    choices: ['0°C', '4°C', '10°C', '40°C'],
+    correctIndex: 1,
+    difficulty: 2,
+    note: '4°C 물이 가장 무거워 바닥에 가라앉는다. 그래서 호수는 위쪽부터 언다.',
+  },
+  {
+    id: 'sci-sunflower-east',
+    category: '과학',
+    question: '다 자란 해바라기 꽃은 어느 쪽을 향할까?',
+    choices: ['하루 종일 해를 따라감', '서쪽으로 고정', '남쪽으로 고정', '동쪽으로 고정'],
+    correctIndex: 3,
+    difficulty: 3,
+    note: '해를 따라 도는 건 어린 개체뿐. 다 자라면 동쪽으로 굳어 아침에 빨리 데워진다.',
+  },
+  {
+    id: 'sci-polar-bear-skin',
+    category: '과학',
+    question: '다 자란 북극곰의 피부(살가죽) 색깔은?',
+    choices: ['검은색', '하얀색', '분홍색', '회색'],
+    correctIndex: 0,
+    difficulty: 2,
+    note: '털에는 흰 색소가 없어 빛을 흩어 하얗게 보일 뿐, 피부는 검다.',
+  },
+  {
+    id: 'sci-dog-color-vision',
+    category: '과학',
+    question: '개가 구별할 수 있는 색은?',
+    choices: ['색을 전혀 못 봄', '빨강·초록 계열', '파랑·노랑 계열', '사람과 똑같이 다 봄'],
+    correctIndex: 2,
+    difficulty: 2,
+    note: '색을 감지하는 세포가 두 종류뿐이라 사람의 적록색약과 비슷하게 보인다.',
+  },
+  {
+    id: 'sci-tooth-enamel',
+    category: '과학',
+    question: '사람 몸에서 경도가 가장 높은(단단한) 부분은?',
+    choices: ['치아 법랑질', '허벅지뼈', '두개골', '손톱'],
+    correctIndex: 0,
+    difficulty: 2,
+    note: '법랑질은 96%가 무기질. 뼈보다 단단하지만 한번 닳으면 다시 자라지 않는다.',
+  },
+  {
+    id: 'sci-astronaut-height',
+    category: '과학',
+    question: '우주에 오래 머문 우주비행사의 키는?',
+    choices: ['커진다', '줄어든다', '변화 없다', '커졌다가 곧 줄어든다'],
+    correctIndex: 0,
+    difficulty: 3,
+    note: '중력이 없어 척추 사이가 벌어져 최대 5cm까지. 지구로 오면 원래대로 돌아온다.',
+  },
+  {
+    id: 'sci-aluminum-precious',
+    category: '과학',
+    question: '19세기 한때 금보다 비쌌던 흔한 금속은?',
+    choices: ['아연', '알루미늄', '니켈', '주석'],
+    correctIndex: 1,
+    difficulty: 3,
+    note: '뽑아내기 어려워 왕실 식기로 쓰였다. 1886년 전기분해법이 나오며 값이 폭락.',
+  },
+  {
+    id: 'sci-sound-medium',
+    category: '과학',
+    question: '소리가 가장 빠르게 전달되는 곳은?',
+    choices: ['진공', '공기', '물', '철(고체)'],
+    correctIndex: 3,
+    difficulty: 2,
+    note: '단단할수록(탄성이 클수록) 빠르다. 철은 약 5,000m/s로 공기의 15배 가까이.',
+  },
+  {
+    id: 'sci-tongue-map',
+    category: '과학',
+    question: '혀 부위별로 맛을 나눠 느낀다는 미각 지도는?',
+    choices: ['과학적 사실', '잘못된 통설', '사람마다 다름', '나이 들면 생김'],
+    correctIndex: 1,
+    difficulty: 2,
+    note: '1901년 독일 연구가 오역·단순화돼 퍼진 그림. 실제론 혀 전체에서 모든 맛을 느낀다.',
+  },
+
+  // ── v4: 역사(세계사) 보강 (적대적 검증 통과분) ───────────────
+  {
+    id: 'hist-genghis-khan',
+    category: '역사',
+    question: '몽골 제국을 세운 인물은?',
+    choices: ['쿠빌라이 칸', '티무르', '칭기즈 칸', '아틸라'],
+    correctIndex: 2,
+    difficulty: 1,
+    note: '1206년 부족장 회의에서 대칸으로 추대됐다. 본명은 테무진.',
+  },
+  {
+    id: 'hist-first-moonwalk',
+    category: '역사',
+    question: '인류 최초로 달에 발을 디딘 사람은?',
+    choices: ['닐 암스트롱', '유리 가가린', '버즈 올드린', '존 글렌'],
+    correctIndex: 0,
+    difficulty: 1,
+    note: '1969년 아폴로 11호. 19분 뒤 버즈 올드린이 두 번째로 내려섰다.',
+  },
+  {
+    id: 'hist-colosseum-name',
+    category: '역사',
+    question: '고대 로마의 대표적인 원형 경기장은?',
+    choices: ['파르테논 신전', '콜로세움', '판테온', '개선문'],
+    correctIndex: 1,
+    difficulty: 1,
+    note: '정식 이름은 플라비우스 원형극장. 약 5만 명을 수용한 것으로 추정된다.',
+  },
+  {
+    id: 'hist-america-name',
+    category: '역사',
+    question: '아메리카 대륙 이름의 유래가 된 탐험가는?',
+    choices: ['콜럼버스', '바스쿠 다 가마', '마르코 폴로', '아메리고 베스푸치'],
+    correctIndex: 3,
+    difficulty: 1,
+    note: "1507년 발트제뮐러의 세계지도에 그의 이름을 딴 'America'가 처음 등장했다.",
+  },
+  {
+    id: 'hist-machu-picchu-inca',
+    category: '역사',
+    question: '마추픽추를 남긴 남아메리카 문명은?',
+    choices: ['잉카 문명', '마야 문명', '아즈텍 문명', '올멕 문명'],
+    correctIndex: 0,
+    difficulty: 2,
+    note: '해발 약 2,430m 능선에 세워졌고, 1911년 탐험가 빙엄이 세상에 알렸다.',
+  },
+  {
+    id: 'hist-hannibal-animal',
+    category: '역사',
+    question: '한니발이 알프스를 넘을 때 이끈 전투용 동물은?',
+    choices: ['낙타', '사자', '순록', '코끼리'],
+    correctIndex: 3,
+    difficulty: 2,
+    note: '카르타고의 장군. 기원전 218년 전투 코끼리 37마리를 이끌고 넘었다고 전한다.',
+  },
+  {
+    id: 'hist-first-circumnavigation',
+    category: '역사',
+    question: '최초의 세계 일주 항해를 시작한 탐험가는?',
+    choices: ['제임스 쿡', '바스쿠 다 가마', '마젤란', '드레이크'],
+    correctIndex: 2,
+    difficulty: 2,
+    note: '정작 본인은 필리핀에서 사망했고, 엘카노가 1522년 귀환을 마쳤다.',
+  },
+  {
+    id: 'hist-terracotta-army',
+    category: '역사',
+    question: '중국 시안에서 발굴된 흙 병사 군단은?',
+    choices: ['삼성퇴', '용문석굴', '막고굴', '병마용'],
+    correctIndex: 3,
+    difficulty: 2,
+    note: '1974년 우물을 파던 농민이 발견. 병사 인형만 8천 점가량으로 추정된다.',
+  },
+  {
+    id: 'hist-taj-mahal-purpose',
+    category: '역사',
+    question: '인도 타지마할이 원래 지어진 용도는?',
+    choices: ['황궁', '황후의 무덤', '천문대', '요새'],
+    correctIndex: 1,
+    difficulty: 2,
+    note: '무굴 제국 황제 샤자한이 세상을 떠난 황후를 기려 지은 묘당이다.',
+  },
+  {
+    id: 'hist-joan-of-arc',
+    category: '역사',
+    question: '백년전쟁에서 프랑스군을 이끈 소녀는?',
+    choices: ['나이팅게일', '클레오파트라', '마리 퀴리', '잔 다르크'],
+    correctIndex: 3,
+    difficulty: 1,
+    note: '1429년 열일곱 나이에 오를레앙 포위를 풀어내며 전세를 바꿨다.',
+  },
+  {
+    id: 'hist-cake-quote',
+    category: '역사',
+    question: "'빵이 없으면 케이크를' 말한 것으로 알려진 인물은?",
+    choices: ['마리 앙투아네트', '예카테리나 2세', '엘리자베스 1세', '이사벨 여왕'],
+    correctIndex: 0,
+    difficulty: 1,
+    note: '정작 본인이 했다는 기록은 없고 후대에 잘못 붙은 말이라는 게 정설.',
+  },
+  {
+    id: 'hist-yuan-dynasty',
+    category: '역사',
+    question: '몽골이 중국에 세운 왕조는?',
+    choices: ['송나라', '원나라', '명나라', '청나라'],
+    correctIndex: 1,
+    difficulty: 2,
+    note: "쿠빌라이 칸이 1271년 국호를 '원'으로 정했다. 뜻은 '만물의 근원'.",
+  },
+  {
+    id: 'hist-hammurabi-code',
+    category: '역사',
+    question: '함무라비 법전을 남긴 고대 왕국은?',
+    choices: ['아시리아', '페니키아', '바빌로니아', '히타이트'],
+    correctIndex: 2,
+    difficulty: 2,
+    note: "기원전 18세기. 282개 조항이 돌기둥에 새겨졌고 '눈에는 눈'으로 유명하다.",
+  },
+  {
+    id: 'hist-cuneiform-sumer',
+    category: '역사',
+    question: '쐐기문자를 처음 사용한 고대 문명은?',
+    choices: ['수메르', '히타이트', '페르시아', '인더스'],
+    correctIndex: 0,
+    difficulty: 2,
+    note: '갈대 펜으로 점토판에 눌러 새겼다. 가장 오래된 문자 체계 중 하나로 꼽힌다.',
+  },
+  {
+    id: 'hist-zhenghe-voyages',
+    category: '역사',
+    question: '명나라 대함대를 이끌고 인도양을 항해한 인물은?',
+    choices: ['장건', '현장', '정화', '이시진'],
+    correctIndex: 2,
+    difficulty: 3,
+    note: '1405년부터 일곱 차례 원정. 아프리카 동해안까지 다녀왔다.',
+  },
+  {
+    id: 'hist-edo-shogunate-founder',
+    category: '역사',
+    question: '일본 에도 막부를 연 인물은?',
+    choices: ['오다 노부나가', '도쿠가와 이에야스', '미나모토 요리토모', '다이라노 기요모리'],
+    correctIndex: 1,
+    difficulty: 2,
+    note: '1603년 쇼군에 올라 에도에 막부를 열었고, 그 체제는 265년 이어졌다.',
+  },
+  {
+    id: 'hist-napoleon-final-exile',
+    category: '역사',
+    question: '나폴레옹이 마지막으로 유배된 섬은?',
+    choices: ['엘바섬', '코르시카섬', '세인트헬레나', '몰타섬'],
+    correctIndex: 2,
+    difficulty: 2,
+    note: '대서양 한가운데 외딴 섬. 앞서 유배됐던 엘바섬에서는 탈출에 성공했었다.',
+  },
+  {
+    id: 'hist-peter-the-great',
+    category: '역사',
+    question: '상트페테르부르크를 세운 러시아 황제는?',
+    choices: ['이반 4세', '표트르 대제', '예카테리나 2세', '알렉산드르 1세'],
+    correctIndex: 1,
+    difficulty: 2,
+    note: '1703년 늪지대를 메워 새 수도를 세웠다. 훗날 유럽으로 난 창이라 불린 도시.',
+  },
+
+  // ── v5: 과학 어려움 보강 2차 (적대적 검증 통과분) ──────────
+  {
+    id: 'sci-tree-mass-source',
+    category: '과학',
+    question: '다 자란 나무 건조 무게의 대부분은 어디서 왔을까?',
+    choices: ['공기 중 이산화탄소', '흙 속 무기물', '뿌리로 빨아들인 물', '땅속 유기물 거름'],
+    correctIndex: 0,
+    difficulty: 2,
+    note: '탄소도 산소도 공기에서 온다. 물은 수소만 대주고, 흙에서 온 무기물은 1% 안팎.',
+  },
+  {
+    id: 'sci-concrete-curing',
+    category: '과학',
+    question: '콘크리트가 굳는 진짜 원리는?',
+    choices: ['물이 증발해 마름', '물과의 화학반응', '공기 중 산소와 반응', '온도가 내려가며 응고'],
+    correctIndex: 1,
+    difficulty: 2,
+    note: '시멘트는 물과 반응해 굳는다. 그래서 물속에서도 굳고, 마르면 오히려 약해진다.',
+  },
+  {
+    id: 'sci-argon-third-gas',
+    category: '과학',
+    question: '건조한 공기에 세 번째로 많은 기체는?',
+    choices: ['이산화탄소', '네온', '아르곤', '수소'],
+    correctIndex: 2,
+    difficulty: 3,
+    note: '질소 78%, 산소 21% 다음이 아르곤 0.93%. 이산화탄소는 약 0.04%로 네 번째다.',
+  },
+  {
+    id: 'sci-kilogram-standard',
+    category: '과학',
+    question: '2019년부터 1kg의 기준이 된 것은?',
+    choices: ['파리의 백금 원기', '물 1리터의 질량', '탄소12 원자 개수', '플랑크 상수'],
+    correctIndex: 3,
+    difficulty: 3,
+    note: '2019년 5월, 파리의 백금-이리듐 원기가 은퇴하고 플랑크 상수가 기준이 됐다.',
+  },
+  {
+    id: 'sci-whip-crack',
+    category: '과학',
+    question: '채찍을 휘두를 때 나는 큰 소리의 정체는?',
+    choices: ['작은 소닉붐', '가죽끼리 부딪힘', '손의 바람 소리', '지면을 때리는 소리'],
+    correctIndex: 0,
+    difficulty: 2,
+    note: '채찍을 타고 내려간 고리가 음속을 넘으면서 만드는 작은 충격파가 그 소리다.',
+  },
+  {
+    id: 'sci-cold-welding',
+    category: '과학',
+    question: '진공의 우주에서 깨끗한 같은 금속끼리 눌러 맞대면?',
+    choices: ['아무 변화 없다', '그대로 붙어버린다', '정전기로 밀어낸다', '접촉면이 녹아내린다'],
+    correctIndex: 1,
+    difficulty: 3,
+    note: '산화막이 없어 금속 원자끼리 그대로 결합한다. 1991년 갈릴레오 안테나 사고의 원인.',
+  },
+  {
+    id: 'sci-helium-no-freeze',
+    category: '과학',
+    question: '1기압에서 절대영도까지 식혀도 안 어는 것은?',
+    choices: ['수소', '질소', '헬륨', '수은'],
+    correctIndex: 2,
+    difficulty: 2,
+    note: '헬륨은 양자 요동 탓에 1기압에선 절대영도까지 액체다. 굳히려면 약 25기압이 필요.',
+  },
+  {
+    id: 'sci-blue-glacier-ice',
+    category: '과학',
+    question: '빙하 속 오래된 얼음이 파랗게 보이는 이유는?',
+    choices: [
+      '하늘색을 반사해서',
+      '공기 방울이 산란해서',
+      '미세 조류가 살아서',
+      '붉은빛을 흡수해서',
+    ],
+    correctIndex: 3,
+    difficulty: 3,
+    note: '붉은 계열 빛을 흡수하고 파란빛만 되돌려 보낸다. 기포가 빠진 얼음일수록 파랗다.',
+  },
 ] as const;
+
+// ── 형제 문항 계보 ─────────────────────────────────────────────
+// 한 라운드에 둘 이상 나오면 서로 정답을 흘리는 문항 묶음. 같은 템플릿을 공유하면서
+// 정답 후보가 닫힌 집합이라 앞 문항의 정답 공개가 뒷 문항의 소거 힌트가 된다
+// (베토벤 별명은 정확히 넷, 영화제 최고상은 셋 — 오답을 바꿔 끼울 수가 없다).
+// picker가 한 묶음당 한 문항만 뽑아 이 누출을 막는다. 문항은 여러 묶음에 속할 수 있다.
+//
+// 여기 넣을 것: 정답 후보가 서로 겹치는 형제 문항. 넣지 말 것: 숫자만 우연히 겹치는
+// 무관한 문항(행성 8개 ↔ 거미 다리 8개) — 서로 아무 정보도 주지 않는다.
+const EXCLUSIVE_GROUPS: Readonly<Record<string, readonly string[]>> = {
+  // 한국상식
+  'kr-sejong-instrument': ['kr-honcheonui', 'kr-rain-gauge', 'kr-water-clock', 'kr-sundial'],
+  'kr-lunar-holiday': ['kr-chuseok', 'kr-seollal', 'kr-daeboreum', 'kr-dano'],
+  'kr-solar-anniversary': [
+    'kr-blackday',
+    'kr-pepero-day',
+    'kr-children-day',
+    'kr-parents-day',
+    'kr-teachers-day',
+    'kr-foundation-day',
+    'kr-hangul-day',
+  ],
+  'kr-holiday-food': ['kr-songpyeon-day', 'kr-tteokguk-day', 'kr-dongji-food'],
+  'kr-traditional-strings': ['kr-gayageum', 'kr-geomungo'],
+  'kr-joseon-king': ['kr-sejong-father', 'kr-gyeongbok-builder'],
+  'kr-gyeongju': ['kr-silla-capital', 'kr-bulguksa-city'],
+  'kr-host-year': ['kr-pyeongchang-olympics', 'kr-seoul-olympics', 'kr-2002-worldcup'],
+  // 과학
+  'sci-element-symbol': ['sci-au', 'sci-ag', 'sci-fe', 'sci-cu'],
+  'sci-chem-formula': ['sci-water-formula', 'sci-co2-formula', 'sci-salt-formula'],
+  'sci-orbital-period': ['sci-earth-rotation', 'sci-earth-orbit', 'sci-moon-orbit'],
+  'sci-planet-superlative': ['sci-largest-planet', 'sci-smallest-planet', 'sci-hottest-planet'],
+  'sci-inventor': ['sci-edison', 'sci-bell', 'sci-marconi'],
+  'sci-microbiology': ['sci-pasteur', 'sci-fleming'],
+  'sci-photosynthesis': [
+    'sci-photosynthesis-input',
+    'sci-photosynthesis-output',
+    'sci-tree-mass-source',
+  ],
+  'sci-heart-count': ['sci-heart-chambers', 'sci-octopus-hearts'],
+  'sci-body-count': ['sci-human-bones', 'sci-teeth-adult'],
+  // 역사
+  'hist-world-war': ['hist-ww1-start', 'hist-ww1-end', 'hist-ww2-start', 'hist-ww2-end'],
+  'hist-rome-fall': ['hist-rome-fall-west', 'hist-east-roman-fall'],
+  'hist-cold-war-end': ['hist-berlin-wall-fall', 'hist-soviet-collapse'],
+  'hist-revolution-year': [
+    'hist-french-revolution',
+    'hist-american-independence',
+    'hist-russia-revolution',
+  ],
+  // 일반상식
+  'world-euro-country': [
+    'hist-renaissance-origin',
+    'hist-industrial-rev',
+    'world-eiffel-country',
+    'world-statue-liberty-gift',
+    'cult-pizza-origin',
+    'cult-french-fries-origin',
+  ],
+  'world-lake-superlative': ['world-largest-lake', 'world-deepest-lake'],
+  'world-headquarters': [
+    'world-un-headquarters',
+    'world-eu-headquarters',
+    'world-fifa-headquarters',
+  ],
+  'world-egypt': ['world-suez-canal', 'world-pyramid-egypt'],
+  'world-strait': ['world-gibraltar-continents', 'world-bosphorus-country'],
+  'world-island-superlative': ['world-largest-island', 'world-mediterranean-island'],
+  'world-eiffel': ['world-eiffel-country', 'world-eiffel-height', 'world-eiffel-year'],
+  // 문화
+  'cult-beethoven': ['cult-beethoven-9', 'cult-beethoven-5', 'cult-beethoven-3'],
+  'cult-film-festival': ['cult-cannes-palme', 'cult-venice-lion', 'cult-berlin-bear'],
+  'cult-composer': [
+    'cult-bach-aria',
+    'cult-vivaldi-fourseasons',
+    'cult-mozart-magic',
+    'cult-schubert-erlking',
+    'cult-tchaikovsky-swan',
+  ],
+  'cult-michelangelo': ['cult-sistine', 'cult-david-statue'],
+  'cult-sculptor': ['cult-david-statue', 'cult-thinker'],
+  'cult-van-gogh': ['cult-starry-night', 'cult-sunflowers'],
+  'cult-monet': ['cult-impression', 'cult-water-lilies'],
+  'cult-modern-painter': ['cult-guernica', 'cult-dali-clocks'],
+  'cult-expressionist': ['cult-the-scream', 'cult-kiss-klimt'],
+  'cult-russian-novelist': ['cult-war-peace', 'cult-crime-punishment'],
+  'cult-team-size': [
+    'cult-soccer-players',
+    'cult-volleyball-players',
+    'cult-basketball-players',
+    'cult-rugby-players',
+  ],
+  'cult-baseball': ['cult-baseball-innings', 'cult-baseball-stitches'],
+  'cult-baseball-feat': ['cult-cycle-hit', 'cult-no-hitter'],
+  'cult-strings': ['cult-violin-strings', 'cult-guitar-strings'],
+  'cult-piano': ['cult-piano-keys', 'cult-piano-black-keys'],
+  'cult-golf-term': ['cult-golf-eagle', 'cult-golf-hole-in-one'],
+  'cult-tennis-surface': ['cult-wimbledon-surface', 'cult-french-open-surface'],
+  'cult-olympic-host-city': ['cult-tokyo-olympics-2020', 'cult-paris-olympics-2024'],
+  'cult-food-origin': [
+    'cult-pizza-origin',
+    'cult-sushi-origin',
+    'cult-coffee-origin',
+    'cult-french-fries-origin',
+  ],
+  'world-paris': ['world-eu-capital', 'cult-paris-olympics-2024'],
+  'world-mountain-superlative': ['world-tallest-mountain', 'sci-chimborazo'],
+  'sci-sound': ['sci-sound-speed', 'sci-sound-medium', 'sci-whip-crack'],
+  'sci-animal-vision': ['sci-bat-myth', 'sci-dog-color-vision'],
+  'hist-mongol': ['hist-genghis-khan', 'hist-yuan-dynasty'],
+  'hist-explorer': ['hist-columbus', 'hist-america-name', 'hist-first-circumnavigation'],
+  'hist-napoleon': ['hist-waterloo', 'hist-napoleon-final-exile'],
+  'hist-ancient-civ': ['hist-hammurabi-code', 'hist-cuneiform-sumer'],
+  // 주제는 무관하지만 보기 4개가 완전히 같고 정답까지 같은(둘 다 "3개") 기계적 중복.
+  'dup-options-1235': ['sci-octopus-hearts', 'cult-michelin-stars'],
+};
+
+/** id → 속한 묶음 이름들. 오타 난 id는 `quiz-pools.test.ts`가 잡는다. */
+export const TRIVIA_GROUPS_BY_ID: ReadonlyMap<string, readonly string[]> = (() => {
+  const map = new Map<string, string[]>();
+  for (const [group, ids] of Object.entries(EXCLUSIVE_GROUPS)) {
+    for (const id of ids) map.set(id, [...(map.get(id) ?? []), group]);
+  }
+  return map;
+})();
 
 // Stable, sorted-by-id view used by the seed-based picker. Sorting at module load
 // pins the pick order regardless of array insertion order — adding a new question
 // at the end of TRIVIA_POOL will *not* change the seed→question mapping for any
 // id that was already there (only the slot a new id occupies in alphabetical order).
-export const TRIVIA_POOL_SORTED: readonly TriviaQuestion[] = [...TRIVIA_POOL].sort((a, b) =>
-  a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
-);
+// Sibling-family tags are attached here rather than on each literal so the family
+// table above stays readable as one block.
+export const TRIVIA_POOL_SORTED: readonly TriviaQuestion[] = [...TRIVIA_POOL]
+  .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  .map((q) => {
+    const groups = TRIVIA_GROUPS_BY_ID.get(q.id);
+    return groups ? { ...q, exclusiveGroups: groups } : q;
+  });
 
 export function getQuestionById(id: string): TriviaQuestion | undefined {
   return TRIVIA_POOL.find((q) => q.id === id);

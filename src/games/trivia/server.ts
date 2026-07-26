@@ -17,7 +17,17 @@ export type QuizQuestion = {
   choices: readonly [string, string, string, string];
   correctIndex: 0 | 1 | 2 | 3;
   note?: string;
+  /**
+   * Sibling families this question belongs to. Two questions sharing a family
+   * never land in the same round — see `pickQuestions`. A question can sit in
+   * more than one family (에펠탑 문항은 "에펠탑"이자 "유럽 국가" 계열).
+   */
+  exclusiveGroups?: readonly string[];
+  /** 1 = easy, 2 = normal, 3 = hard. Untagged pools (nonsense) count as normal. */
+  difficulty?: 1 | 2 | 3;
 };
+
+const DEFAULT_DIFFICULTY = 2;
 
 /**
  * Replay payload broadcast on game:start. Carries everything the client needs to
@@ -65,11 +75,28 @@ export type TriviaReplayData = {
 };
 
 /**
- * Draw `count` questions without replacement, spreading across categories so a
- * single round doesn't land 4-5 questions of the same flavor. A category may fill
- * at most ~60% of the round (3 of 5); if the pool is too small or too skewed to
- * honor that, a second pass fills the remaining slots ignoring the cap, so the
- * round is always `min(count, pool.length)` questions.
+ * Draw `count` questions without replacement under three constraints:
+ *
+ * - Sibling exclusion: at most one question per `exclusiveGroups` family. Sibling
+ *   questions permute a closed answer set (베토벤 별명 4개, 영화제 최고상 3개),
+ *   so revealing one crosses answers off the next — a round with two of them is
+ *   measurably easier. Some families can't be fixed by rewriting distractors
+ *   because the plausible wrong answers *are* the siblings' answers.
+ * - Difficulty quota: ~40% easy, ~20% hard, rest normal (5 → 2/2/1). Without this
+ *   a seeded draw swings between an all-"수도는?" round and an all-연도암기 round.
+ * - Category spread: one category fills at most ~60% of the round (3 of 5), so a
+ *   round doesn't land 4-5 questions of the same flavor.
+ *
+ * Constraints are dropped in reverse order of importance when the pool can't
+ * satisfy them (a leak hurts more than a missed quota, which hurts more than a
+ * lopsided flavor mix), so the round is always `min(count, pool.length)` long.
+ * The quota switches off entirely for a pool that carries no difficulty tags
+ * (nonsense) — otherwise every question would read as normal, the normal quota
+ * would bind at 2, and the *category* cap would be the constraint dropped to
+ * fill the round. That would silently trade one pool's balance for another's.
+ *
+ * Picks come back sorted easy → hard: the finale carries a 2x multiplier, so the
+ * last question should be the one worth betting on.
  */
 function pickQuestions(
   rng: () => number,
@@ -85,22 +112,56 @@ function pickQuestions(
   }
   const n = Math.min(count, pool.length);
   const cap = Math.max(1, Math.ceil(n * 0.6));
+  const easyQuota = Math.round(n * 0.4);
+  const hardQuota = Math.max(1, Math.floor(n * 0.2));
+  const quota: Record<1 | 2 | 3, number> = {
+    1: easyQuota,
+    2: n - easyQuota - hardQuota,
+    3: hardQuota,
+  };
+
   const picked: QuizQuestion[] = [];
   const pickedIds = new Set<string>();
   const perCategory = new Map<string, number>();
-  for (const q of pool) {
-    if (picked.length >= n) break;
-    const used = perCategory.get(q.category) ?? 0;
-    if (used >= cap) continue;
+  const perDifficulty: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
+  const usedGroups = new Set<string>();
+
+  const quotaEnabled = sortedPool.some((q) => q.difficulty != null);
+  const levelOf = (q: QuizQuestion) => q.difficulty ?? DEFAULT_DIFFICULTY;
+  const noUsedSibling = (q: QuizQuestion) =>
+    !(q.exclusiveGroups ?? []).some((g) => usedGroups.has(g));
+  const underQuota = (q: QuizQuestion) =>
+    !quotaEnabled || perDifficulty[levelOf(q)] < quota[levelOf(q)];
+  const underCap = (q: QuizQuestion) => (perCategory.get(q.category) ?? 0) < cap;
+
+  const take = (q: QuizQuestion) => {
     picked.push(q);
     pickedIds.add(q.id);
-    perCategory.set(q.category, used + 1);
+    perCategory.set(q.category, (perCategory.get(q.category) ?? 0) + 1);
+    perDifficulty[levelOf(q)] += 1;
+    for (const g of q.exclusiveGroups ?? []) usedGroups.add(g);
+  };
+
+  const passes: Array<(q: QuizQuestion) => boolean> = [
+    (q) => noUsedSibling(q) && underQuota(q) && underCap(q),
+    (q) => noUsedSibling(q) && underQuota(q),
+    (q) => noUsedSibling(q),
+    () => true,
+  ];
+  for (const accepts of passes) {
+    for (const q of pool) {
+      if (picked.length >= n) break;
+      if (pickedIds.has(q.id)) continue;
+      if (!accepts(q)) continue;
+      take(q);
+    }
   }
-  for (const q of pool) {
-    if (picked.length >= n) break;
-    if (!pickedIds.has(q.id)) picked.push(q);
-  }
-  return picked;
+
+  // Stable sort: ties keep shuffle order, so this stays deterministic.
+  return picked
+    .map((q, i) => ({ q, i }))
+    .sort((a, b) => levelOf(a.q) - levelOf(b.q) || a.i - b.i)
+    .map((e) => e.q);
 }
 
 function shuffleChoices(
