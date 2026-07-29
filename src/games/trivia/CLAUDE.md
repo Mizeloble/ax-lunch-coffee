@@ -22,12 +22,20 @@
 - 풀(`TRIVIA_POOL`)은 `id` 사전순(`TRIVIA_POOL_SORTED`)으로 정렬한 뒤 추출. 풀 끝에 새 문제를 추가해도 기존 id의 추출 매핑은 안 깨짐.
 - 동률 tie-break: 점수 DESC → 정답 응답속도 합 ASC → `playerToken` 사전순.
 
+## 방별 출제 이력 (반복 방지)
+`buildQuizPlan(seed, pool, excludeIds)`의 `excludeIds`는 그 방이 **이미 받은 문항 id**다. 파티는 한 자리에서 여러 판을 돌리는데, 345문항 풀도 20라운드면 순수 확률로 슬롯의 ~13%가 겹친다("아까 그거 또 나왔네").
+
+**타이밍이 핵심이다.** `rounds/quiz.ts`가 라운드 시작에 목록을 스냅샷으로 떠서 `buildQuizPlan`에 넘기고, **같은 스냅샷**을 `computeResult`까지 들고 간다(`ComputeResultInput.excludeIds`). 결과 시점에 `room.servedQuestions`를 다시 읽으면 안 된다 — 그때는 이번 라운드 문항이 이미 누적돼 있어서 **다른 계획이 만들어지고, 플레이한 문항이 아닌 것들로 채점된다.** 누적은 라운드가 결과를 낸 뒤에만 한다(중간에 죽은 라운드는 문항을 소모하지 않는다).
+
+풀이 거의 소진되면(남은 미출제 < 라운드 문항 수) 이력을 비워 새 사이클을 시작한다 — 셔플백 방식.
+
 ## 페이즈
 - 문제별 `[openAt, closeAt)` 윈도우 안에서만 답 수락. 그 외 무시.
 - 클라이언트 문제 노출/정답 공개는 `replay.data.schedule`(서버 권위) 기반 wall-clock으로 자동 분기.
 
 ## 금기
 - `Math.random()` / `Date.now()`를 `computeResult`/`buildQuizPlan`에서 호출 금지.
+- `computeResult` 안에서 방 상태(출제 이력 등)를 **직접 읽기 금지**. 필요한 건 전부 `ComputeResultInput`으로 받는다 — 시작 시점과 결과 시점 사이에 방 상태가 변하면 계획이 갈라진다.
 - 클라가 보낸 timestamp를 ranking에 직접 반영 금지.
 - `trivia:answer` payload에 timestamp 추가 금지 (스푸핑 방지).
 - Renderer에서 정답 재계산 / 점수 재계산을 ranking에 사용 금지. 서버 ranking이 진실.

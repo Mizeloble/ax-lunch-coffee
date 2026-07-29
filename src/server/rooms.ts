@@ -96,6 +96,14 @@ export type RoomState = {
   loserCount: number; // 1..3
   players: Map<string, Player>; // keyed by playerToken
   currentRound?: { gameId: GameId; seed: number; startAt: number; replay: ReplayPayload };
+  /**
+   * Quiz question ids this room has already been served, per game. Lets a party
+   * play several rounds without "아까 그거 또 나왔네" — the picker skips these.
+   * Memory-only like the rest of the room and capped by the pool size (a few KB),
+   * so it needs no cleanup of its own; it dies with the room. Appended only when a
+   * round *finishes*, never at start — see `rounds/quiz.ts` for why the timing matters.
+   */
+  servedQuestions?: Partial<Record<GameId, string[]>>;
   charge?: ChargeState; // present only while status === 'charging'
   reaction?: ReactionState; // present only during a `reaction` round (countdown + playing)
   trivia?: TriviaState; // present only during a `trivia` round (countdown + playing)

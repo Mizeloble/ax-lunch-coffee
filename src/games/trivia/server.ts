@@ -84,16 +84,20 @@ export type TriviaReplayData = {
  *   because the plausible wrong answers *are* the siblings' answers.
  * - Difficulty quota: ~40% easy, ~20% hard, rest normal (5 → 2/2/1). Without this
  *   a seeded draw swings between an all-"수도는?" round and an all-연도암기 round.
+ * - Freshness: questions already served to this room are skipped (`excludeIds`).
+ *   A party plays several rounds back to back, and a 345-question pool still
+ *   repeats ~17% of slots over 20 rounds by pure chance — "아까 그거 또 나왔네".
  * - Category spread: one category fills at most ~60% of the round (3 of 5), so a
  *   round doesn't land 4-5 questions of the same flavor.
  *
  * Constraints are dropped in reverse order of importance when the pool can't
  * satisfy them (a leak hurts more than a missed quota, which hurts more than a
- * lopsided flavor mix), so the round is always `min(count, pool.length)` long.
- * The quota switches off entirely for a pool that carries no difficulty tags
- * (nonsense) — otherwise every question would read as normal, the normal quota
- * would bind at 2, and the *category* cap would be the constraint dropped to
- * fill the round. That would silently trade one pool's balance for another's.
+ * repeat, which hurts more than a lopsided flavor mix), so the round is always
+ * `min(count, pool.length)` long. The quota switches off entirely for a pool that
+ * carries no difficulty tags (nonsense) — otherwise every question would read as
+ * normal, the normal quota would bind at 2, and the *category* cap would be the
+ * constraint dropped to fill the round. That would silently trade one pool's
+ * balance for another's.
  *
  * Picks come back sorted easy → hard: the finale carries a 2x multiplier, so the
  * last question should be the one worth betting on.
@@ -102,6 +106,7 @@ function pickQuestions(
   rng: () => number,
   count: number,
   sortedPool: readonly QuizQuestion[],
+  excludeIds: ReadonlySet<string>,
 ): QuizQuestion[] {
   const pool = [...sortedPool];
   for (let i = pool.length - 1; i > 0; i--) {
@@ -133,6 +138,7 @@ function pickQuestions(
   const underQuota = (q: QuizQuestion) =>
     !quotaEnabled || perDifficulty[levelOf(q)] < quota[levelOf(q)];
   const underCap = (q: QuizQuestion) => (perCategory.get(q.category) ?? 0) < cap;
+  const unseen = (q: QuizQuestion) => !excludeIds.has(q.id);
 
   const take = (q: QuizQuestion) => {
     picked.push(q);
@@ -143,6 +149,8 @@ function pickQuestions(
   };
 
   const passes: Array<(q: QuizQuestion) => boolean> = [
+    (q) => noUsedSibling(q) && underQuota(q) && unseen(q) && underCap(q),
+    (q) => noUsedSibling(q) && underQuota(q) && unseen(q),
     (q) => noUsedSibling(q) && underQuota(q) && underCap(q),
     (q) => noUsedSibling(q) && underQuota(q),
     (q) => noUsedSibling(q),
@@ -186,20 +194,32 @@ function shuffleChoices(
  * `game:start` replay; `computeResult` rebuilds the same payload at result time so no
  * state leaks through.
  *
+ * `excludeIds` (ids this room has already been served) is an *input*, not state read
+ * from the room — the round module snapshots it at start and hands the identical
+ * snapshot to `computeResult`, so both builds agree even though the room's list grows
+ * between the two calls. Same (seed, pool, excludeIds) → same plan, always.
+ *
  * Determinism: a single rng stream consumed in fixed order — pickQuestions first,
- * then per-question shuffleChoices. Add new rng consumers only at the end to keep
- * existing seed→output mappings stable.
+ * then per-question shuffleChoices. `excludeIds` only filters candidates; it consumes
+ * no rng, so adding it leaves every existing seed→shuffle mapping intact. Add new rng
+ * consumers only at the end to keep those mappings stable.
  */
 export function buildQuizPlan(
   seed: number,
   sortedPool: readonly QuizQuestion[],
+  excludeIds: Iterable<string> = [],
 ): {
   questions: Omit<TriviaReplayData, 'scores'>['questions'];
   schedule: TriviaReplayData['schedule'];
   durationMs: number;
 } {
   const rng = mulberry32(seed);
-  const picks = pickQuestions(rng, GAME.TRIVIA_QUESTION_COUNT, sortedPool);
+  const picks = pickQuestions(
+    rng,
+    GAME.TRIVIA_QUESTION_COUNT,
+    sortedPool,
+    excludeIds instanceof Set ? excludeIds : new Set(excludeIds),
+  );
 
   const questions = picks.map((q) => {
     const { choices, correctIndex } = shuffleChoices(rng, q);
@@ -248,8 +268,9 @@ export function computeQuizResult(
   input: ComputeResultInput,
   sortedPool: readonly QuizQuestion[],
 ): ReplayPayload {
-  const { seed, players, loserCount, triviaAnswers } = input;
-  const plan = buildQuizPlan(seed, sortedPool);
+  const { seed, players, loserCount, triviaAnswers, excludeIds } = input;
+  // Must be the *same* snapshot the round used at start — see buildQuizPlan.
+  const plan = buildQuizPlan(seed, sortedPool, excludeIds ?? []);
   const correctIndices = plan.questions.map((q) => q.correctIndex);
 
   const entries: Entry[] = players.map((p) => {
