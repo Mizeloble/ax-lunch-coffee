@@ -89,6 +89,25 @@ describe('trivia sibling families', () => {
     }
   });
 
+  it('serves a party 20 straight rounds with no repeated question', () => {
+    // Mirrors rounds/quiz.ts: snapshot the served list, build, then append.
+    const levelOf = new Map(TRIVIA_POOL.map((q) => [q.id, q.difficulty]));
+    for (const room of [0, 1, 2, 3, 4]) {
+      const served: string[] = [];
+      for (let r = 0; r < 20; r++) {
+        const qs = buildQuizPlan(room * 1009 + r * 7919, TRIVIA_POOL_SORTED, served).questions;
+        for (const q of qs) {
+          expect(served, `room ${room} round ${r} repeated ${q.id}`).not.toContain(q.id);
+        }
+        // Freshness must not come at the cost of the difficulty mix.
+        const levels = qs.map((q) => levelOf.get(q.id)!);
+        const count = (d: number) => levels.filter((x) => x === d).length;
+        expect([count(1), count(2), count(3)], `room ${room} round ${r}`).toEqual([2, 2, 1]);
+        served.push(...qs.map((q) => q.id));
+      }
+    }
+  });
+
   it('never repeats a correct answer within a round', () => {
     const answerOf = new Map(TRIVIA_POOL.map((q) => [q.id, q.choices[q.correctIndex]]));
     for (let seed = 0; seed < 400; seed++) {

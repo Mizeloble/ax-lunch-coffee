@@ -19,6 +19,13 @@ export type ComputeResultInput = {
   chargeRatios?: Record<string, number>;
   // For multi-question games (trivia): playerToken -> per-question answer array.
   triviaAnswers?: Record<string, TriviaPerPlayerAnswers>;
+  /**
+   * For quiz games: question ids this room had already been served *before* this
+   * round, so the pick can skip them. Must be the snapshot taken at round start —
+   * the round module captures it and passes the same value here, because the room's
+   * list grows once the round finishes and a re-read would rebuild a different plan.
+   */
+  excludeIds?: readonly string[];
 };
 
 /**

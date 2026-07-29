@@ -30,6 +30,7 @@ export async function runGame(args: {
   chargeRatios?: Record<string, number>;
   tapOffsets?: Record<string, number | null>;
   triviaAnswers?: Record<string, TriviaPerPlayerAnswers>;
+  excludeIds?: readonly string[];
 }): Promise<ReplayPayload> {
   const mod = REGISTRY[args.gameId];
   if (!mod) {
@@ -50,6 +51,7 @@ export async function runGame(args: {
     chargeRatios: args.chargeRatios,
     tapOffsets: args.tapOffsets,
     triviaAnswers: args.triviaAnswers,
+    excludeIds: args.excludeIds,
   });
 }
 

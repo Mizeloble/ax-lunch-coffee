@@ -65,8 +65,19 @@ export async function runQuizRound(io: IO, room: RoomState) {
     return;
   }
 
+  // Freshness: skip questions this room already saw. Snapshot the list *now* and
+  // reuse the identical snapshot at result time — `computeResult` rebuilds the plan
+  // from (seed, pool, excludeIds), and by then the room's list has grown by this
+  // round's questions. Re-reading it there would rebuild a different plan and the
+  // result would score answers against the wrong questions.
+  const served = room.servedQuestions?.[gameId] ?? [];
+  // Shuffle-bag wrap: once too few unseen questions remain to fill a round, start a
+  // fresh cycle instead of letting the fallback ladder serve arbitrary repeats.
+  if (pool.length - served.length < GAME.TRIVIA_QUESTION_COUNT) served.length = 0;
+  const excludeIds = [...served];
+
   const seed = (Math.random() * 0x7fffffff) | 0;
-  const plan = buildQuizPlan(seed, pool);
+  const plan = buildQuizPlan(seed, pool, excludeIds);
   if (plan.questions.length === 0) {
     console.error('quiz plan returned no questions');
     return;
@@ -130,6 +141,7 @@ export async function runQuizRound(io: IO, room: RoomState) {
         players: connectedPlayers,
         loserCount: room.loserCount,
         triviaAnswers,
+        excludeIds,
       });
     } catch (err) {
       console.error('quiz runGame failed', err);
@@ -139,6 +151,12 @@ export async function runQuizRound(io: IO, room: RoomState) {
       io.to(room.id).emit('state', publicRoomState(room));
       return;
     }
+
+    // Mark these as served only now that the round actually produced a result — a
+    // round that dies mid-flight shouldn't burn questions. Safe against a double
+    // fire: the `!room.trivia` guard above returns early once clearTrivia ran.
+    room.servedQuestions ??= {};
+    room.servedQuestions[gameId] = [...excludeIds, ...plan.questions.map((q) => q.id)];
 
     room.currentRound = { gameId, seed, startAt, replay };
     clearTrivia(room);

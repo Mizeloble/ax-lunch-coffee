@@ -125,6 +125,48 @@ describe('buildQuizPlan', () => {
     }
   });
 
+  it('skips questions the room was already served', () => {
+    const seen = ['q0', 'q1', 'q2'];
+    for (const seed of [1, 7, 42, 123, 999]) {
+      const ids = buildQuizPlan(seed, POOL, seen).questions.map((q) => q.id);
+      for (const s of seen) expect(ids, `seed ${seed}`).not.toContain(s);
+    }
+  });
+
+  it('repeats rather than shrinking the round when too few unseen remain', () => {
+    // 8-question pool with only 3 unseen — the round must still be 5 long.
+    const seen = POOL.slice(0, 5).map((q) => q.id);
+    const plan = buildQuizPlan(13, POOL, seen);
+    expect(plan.questions).toHaveLength(GAME.TRIVIA_QUESTION_COUNT);
+    expect(new Set(plan.questions.map((q) => q.id)).size).toBe(GAME.TRIVIA_QUESTION_COUNT);
+    // The 3 unseen ones must all be used before any repeat is pulled in.
+    const ids = new Set(plan.questions.map((q) => q.id));
+    for (const q of POOL.slice(5)) expect(ids).toContain(q.id);
+  });
+
+  it('gives the same plan for the same exclusion snapshot (start vs result)', () => {
+    // The round builds the plan at start and computeResult rebuilds it afterwards.
+    // If the two disagree, answers get scored against the wrong questions.
+    const snapshot = ['q0', 'q3'];
+    const atStart = buildQuizPlan(555, POOL, snapshot);
+    const atResult = buildQuizPlan(555, POOL, snapshot);
+    expect(JSON.stringify(atResult)).toBe(JSON.stringify(atStart));
+    // ...and a *different* snapshot must be able to change it, or the guard is vacuous.
+    const withGrownList = buildQuizPlan(555, POOL, [...snapshot, ...atStart.questions.map((q) => q.id)]);
+    expect(withGrownList.questions.map((q) => q.id)).not.toEqual(
+      atStart.questions.map((q) => q.id),
+    );
+  });
+
+  it('leaves seed→choice-shuffle mapping untouched when nothing is excluded', () => {
+    // excludeIds consumes no rng, so an empty exclusion must reproduce the old plan.
+    for (const seed of [1, 7, 42]) {
+      expect(JSON.stringify(buildQuizPlan(seed, POOL, []))).toBe(
+        JSON.stringify(buildQuizPlan(seed, POOL)),
+      );
+    }
+  });
+
   it('never picks two questions from the same sibling family', () => {
     // 6 families of 3; plenty of room to honor the constraint.
     const siblings: QuizQuestion[] = Array.from({ length: 18 }, (_, i) => ({
