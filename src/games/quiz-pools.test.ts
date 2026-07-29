@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { TRIVIA_POOL } from './trivia/questions';
+import { TRIVIA_POOL, TRIVIA_GROUPS_BY_ID, TRIVIA_POOL_SORTED } from './trivia/questions';
 import { NONSENSE_POOL } from './nonsense/questions';
+import { buildQuizPlan } from './trivia/server';
 
 // 카피 규칙(questions.ts 헤더 주석: question ~40자, choices 모바일 한 줄, note ≤80자)의
 // 회귀 방지용 하드 리밋. 현행 풀 최대치(question 44 / choice 14 / note 60)에
@@ -43,6 +44,64 @@ describe.each(POOLS)('$name question pool', ({ pool }) => {
     for (const q of pool) {
       expect(seen.get(q.question), `${q.id} duplicates ${seen.get(q.question)}`).toBeUndefined();
       seen.set(q.question, q.id);
+    }
+  });
+});
+
+// 형제 문항 계보(TRIVIA_GROUPS_BY_ID) 게이트. 오타 난 id는 조용히 무시되므로 — 그러면
+// 누출을 막는 줄 알았던 묶음이 실제로는 아무 일도 안 한다 — 테스트로 잡는다.
+describe('trivia sibling families', () => {
+  it('only references ids that exist in the pool', () => {
+    const ids = new Set(TRIVIA_POOL.map((q) => q.id));
+    for (const id of TRIVIA_GROUPS_BY_ID.keys()) {
+      expect(ids.has(id), `family table references unknown id "${id}"`).toBe(true);
+    }
+  });
+
+  it('tags the sorted pool the picker actually reads', () => {
+    const tagged = TRIVIA_POOL_SORTED.filter((q) => q.exclusiveGroups?.length);
+    expect(tagged.length).toBe(TRIVIA_GROUPS_BY_ID.size);
+  });
+
+  it('never puts two siblings in the same round', () => {
+    for (let seed = 0; seed < 400; seed++) {
+      const seen = new Map<string, string>();
+      for (const q of buildQuizPlan(seed, TRIVIA_POOL_SORTED).questions) {
+        for (const g of TRIVIA_GROUPS_BY_ID.get(q.id) ?? []) {
+          expect(
+            seen.get(g),
+            `seed ${seed}: ${q.id} and ${seen.get(g)} are both in family "${g}"`,
+          ).toBeUndefined();
+          seen.set(g, q.id);
+        }
+      }
+    }
+  });
+
+  it('gives every real round the same 2/2/1 difficulty mix', () => {
+    const levelOf = new Map(TRIVIA_POOL.map((q) => [q.id, q.difficulty]));
+    for (let seed = 0; seed < 400; seed++) {
+      const levels = buildQuizPlan(seed, TRIVIA_POOL_SORTED).questions.map(
+        (q) => levelOf.get(q.id)!,
+      );
+      const count = (d: number) => levels.filter((x) => x === d).length;
+      expect([count(1), count(2), count(3)], `seed ${seed}`).toEqual([2, 2, 1]);
+    }
+  });
+
+  it('never repeats a correct answer within a round', () => {
+    const answerOf = new Map(TRIVIA_POOL.map((q) => [q.id, q.choices[q.correctIndex]]));
+    for (let seed = 0; seed < 400; seed++) {
+      const seen = new Map<string, string>();
+      for (const q of buildQuizPlan(seed, TRIVIA_POOL_SORTED).questions) {
+        const answer = answerOf.get(q.id)!;
+        if (/^[0-9]/.test(answer)) continue; // 개수·연도 우연 일치는 누출이 아님
+        expect(
+          seen.get(answer),
+          `seed ${seed}: ${q.id} and ${seen.get(answer)} share the answer "${answer}"`,
+        ).toBeUndefined();
+        seen.set(answer, q.id);
+      }
     }
   });
 });
