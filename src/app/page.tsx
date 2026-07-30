@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
 import { isValidRoomId, normalizeRoomId } from '@/lib/ids';
 import { GAME_META, type GameId } from '@/games/types';
-import { gameSubLabel } from '@/lib/game-labels';
+import { gameShortLabel } from '@/lib/game-labels';
 import { AdSlot } from '@/components/AdSlot';
 import { SiteFooter } from '@/components/SiteFooter';
 import { Logo } from '@/components/Logo';
@@ -84,91 +84,90 @@ export default function LandingPage() {
 
   return (
     <>
-      {/* pb-28: 하단 고정 CTA 바에 가리지 않도록 스크롤 영역 여백 확보 */}
-      <main className="min-h-dvh px-6 pb-28">
+      {/* pb-36: 하단 고정 CTA 바(+서브라인)에 가리지 않도록 스크롤 영역 여백 확보 */}
+      <main className="min-h-dvh px-6 pb-36">
         <div className="mx-auto w-full max-w-sm space-y-6 py-8">
-          {/* 헤더 */}
-          <div className="space-y-3 text-center">
-            <Logo size={56} className="mx-auto" />
-            <div className="space-y-1">
-              <h1 className="text-3xl font-bold">{ko.app.title}</h1>
-              <p className="text-sm text-zinc-400">{ko.app.subtitle}</p>
+          {/* 헤더 — 로고 + "설치 없음 · 무료" 한 줄. 오픈소스 배지는 푸터로 내려갔다. */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <Logo size={34} />
+              <span className="text-xl font-bold">{ko.app.title}</span>
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs text-emerald-300/90">
-                <span aria-hidden>✦</span>
-                {ko.landing.installFree}
-              </span>
-              <a
-                href={ko.credit.repoUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex items-center gap-1 rounded-full border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200"
-              >
-                <span aria-hidden>★</span>
-                {ko.landing.openSource}
-              </a>
-            </div>
+            <span className="rounded-full bg-emerald-400/10 px-3 py-1.5 text-[13px] font-semibold text-emerald-300/90">
+              {ko.landing.installFree}
+            </span>
+          </div>
+
+          {/* 히어로 — 화면에서 유일하게 큰 한 줄. '벌칙'만 빨강으로 로고의 빨간 링을 회수한다. */}
+          <div className="space-y-3">
+            <h1 className="text-[38px] font-extrabold leading-[1.15] -tracking-[0.04em]">
+              {ko.landing.heroTitle.pre}
+              <span className="text-red-500">{ko.landing.heroTitle.accent}</span>
+              {ko.landing.heroTitle.post}
+              <br />
+              {ko.landing.heroTitle.line2}
+            </h1>
+            <p className="text-[15px] leading-relaxed text-zinc-400">{ko.landing.heroSub}</p>
           </div>
 
           {/* 히어로 데모 — 여러 미니게임 하이라이트 몽타주(마블·반응속도·퀴즈) */}
-          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
-            <video
-              className="h-44 w-full object-cover"
-              autoPlay
-              muted
-              loop
-              playsInline
-              poster="/demo-games.jpg"
-              aria-label={ko.landing.demoAlt}
-            >
-              <source src="/demo-games.mp4" type="video/mp4" />
-            </video>
+          <div className="space-y-2">
+            <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+              <video
+                className="h-44 w-full object-cover"
+                autoPlay
+                muted
+                loop
+                playsInline
+                poster="/demo-games.jpg"
+                aria-label={ko.landing.demoAlt}
+              >
+                <source src="/demo-games.mp4" type="video/mp4" />
+              </video>
+            </div>
+            <p className="text-center text-[13px] text-zinc-500">
+              {ko.landing.demoCaption(GAME_IDS.length)}
+            </p>
           </div>
 
-          {/* 이렇게 즐겨요 — 3스텝 */}
-          <div className="space-y-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              {ko.landing.howTitle}
-            </p>
-            <ol className="space-y-2">
-              {ko.landing.steps.map((step, i) => (
-                <li key={i} className="flex items-center gap-3">
-                  <span className="flex-none grid h-6 w-6 place-items-center rounded-full bg-amber-400 text-xs font-bold text-zinc-900">
-                    {i + 1}
-                  </span>
-                  <span className="text-sm text-zinc-300">{step}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
+          {/* 3스텝 스트립 — 세로 리스트를 한 줄로 압축. 빨강이 히어로 다음으로 다시 등장. */}
+          <ol className="flex items-stretch gap-1.5" aria-label={ko.landing.howTitle}>
+            {ko.landing.stepsShort.map((step) => (
+              <li
+                key={step}
+                className="flex-1 rounded-xl border border-red-500/25 bg-red-500/[0.07] px-2 py-2.5 text-center text-[13px] font-semibold leading-tight text-red-200"
+              >
+                {step}
+              </li>
+            ))}
+          </ol>
 
           {/* 미니게임 라인업 — 로비 진입 전 콜드 방문자에게 콘텐츠 노출 */}
           <div className="space-y-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              {ko.landing.gamesTitle(GAME_IDS.length)}
-            </p>
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="text-[15px] font-bold text-zinc-100">
+                {ko.landing.gamesTitle(GAME_IDS.length)}
+              </h2>
+              <span className="text-[13px] text-zinc-500">{ko.landing.gamesSubtitle}</span>
+            </div>
             <ul className="grid grid-cols-2 gap-2">
               {GAME_IDS.map((id) => (
                 <li key={id}>
                   {/* 게임 소개 페이지 링크 — 검색 유입 페이지로의 내부 링크 겸 상세 규칙 안내 */}
                   <Link
                     href={`/games/${id}`}
-                    className="surface flex items-center gap-2.5 rounded-xl px-3 py-2.5 active:scale-[0.98]"
+                    className="surface flex h-full items-center gap-2.5 rounded-xl px-3 py-2.5 active:scale-[0.98]"
                   >
                     <span className="text-xl leading-none" aria-hidden>
                       {GAME_META[id].emoji}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-zinc-200">
+                      <span className="block truncate text-[14px] font-semibold text-zinc-100">
                         {ko.games[id]}
                       </span>
-                      <span className="block truncate text-[10px] text-zinc-500">
-                        {gameSubLabel(id)}
+                      <span className="block truncate text-[12px] text-zinc-500">
+                        {gameShortLabel(id)}
                       </span>
-                    </span>
-                    <span className="text-zinc-600 text-sm" aria-hidden>
-                      ›
                     </span>
                   </Link>
                 </li>
@@ -178,9 +177,7 @@ export default function LandingPage() {
 
           {/* 코드로 입장 — QR을 못 찍는 참가자(카메라 없음·링크만 받음)용 우회 경로 */}
           <div className="space-y-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              {ko.landing.joinByCodeTitle}
-            </p>
+            <h2 className="text-[15px] font-bold text-zinc-100">{ko.landing.joinByCodeTitle}</h2>
             <div className="flex gap-2">
               <input
                 inputMode="text"
@@ -197,7 +194,7 @@ export default function LandingPage() {
                   if (e.key === 'Enter') joinByCode();
                 }}
                 placeholder={ko.landing.joinByCodePlaceholder}
-                aria-label={ko.landing.joinByCodeTitle}
+                aria-label={ko.landing.joinByCodePlaceholder}
                 className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 font-mono text-base tracking-[0.2em] uppercase placeholder:tracking-normal placeholder:font-sans focus:border-amber-400 focus:outline-none"
               />
               <button
@@ -218,23 +215,21 @@ export default function LandingPage() {
 
           {/* FAQ — 검색 유입용 콘텐츠(FAQPage JSON-LD와 같은 출처). 접힌 상태로 조용히. */}
           <div className="space-y-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              {ko.landing.faqTitle}
-            </p>
+            <h2 className="text-[15px] font-bold text-zinc-100">{ko.landing.faqTitle}</h2>
             <ul className="space-y-1.5">
               {ko.landing.faq.map((f) => (
                 <li key={f.q}>
-                  <details className="surface group rounded-xl px-3.5 py-2.5">
-                    <summary className="flex cursor-pointer select-none list-none items-center justify-between gap-2 text-[13px] font-medium text-zinc-300">
+                  <details className="surface group rounded-xl px-3.5 py-3">
+                    <summary className="flex cursor-pointer select-none list-none items-center justify-between gap-2 text-[14px] font-medium text-zinc-200">
                       <span>{f.q}</span>
                       <span
-                        className="text-zinc-600 transition-transform group-open:rotate-180"
+                        className="text-lg leading-none text-zinc-600 transition-transform group-open:rotate-45"
                         aria-hidden
                       >
-                        ▾
+                        ＋
                       </span>
                     </summary>
-                    <p className="mt-2 text-xs leading-relaxed text-zinc-400">{f.a}</p>
+                    <p className="mt-2 text-[13px] leading-relaxed text-zinc-400">{f.a}</p>
                   </details>
                 </li>
               ))}
@@ -262,6 +257,8 @@ export default function LandingPage() {
           <button type="button" onClick={createRoom} disabled={busy} className="btn-primary">
             {busy ? ko.landing.creating : ko.landing.createRoom}
           </button>
+          {/* 버튼이 뭘 하는지 한 줄 — "방 만들기"만으론 QR이 나온다는 걸 모른다. */}
+          <p className="text-center text-[13px] text-zinc-500">{ko.landing.createRoomSub}</p>
         </div>
       </div>
     </>

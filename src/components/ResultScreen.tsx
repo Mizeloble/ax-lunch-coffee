@@ -13,7 +13,7 @@ import { getSocket } from '@/lib/socket-client';
 import { GAME } from '@/lib/constants';
 import type { ReactionReplayData } from '@/games/reaction/server';
 import type { TriviaReplayData } from '@/games/trivia/server';
-import { gameCategory, isQuizGame } from '@/games/types';
+import { GAME_META, gameCategory, isQuizGame } from '@/games/types';
 import clsx from 'clsx';
 
 export function ResultScreen({
@@ -26,7 +26,6 @@ export function ResultScreen({
   const isHost = useRoomStore((s) => s.isHost);
   const gameStart = useRoomStore((s) => s.gameStart);
   const router = useRouter();
-  const [showRanking, setShowRanking] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -72,6 +71,39 @@ export function ResultScreen({
       ? (state.currentRound?.replay as TriviaReplayData | undefined)?.questions
       : undefined;
 
+  // 패자 사유는 게임마다 다르다 — 마블은 "꼴찌", 퀴즈는 "최저 점수", 반응속도는
+  // "가장 늦게". 고정 문구("패자")를 쓰면 퀴즈 결과에서 거짓말이 된다.
+  const loserReason = ko.result.loserReason[gameCategory(state.gameId)];
+
+  // 퀴즈 지표 한 줄("5문제 중 1개 정답 · 640점") — 결과 화면과 공유 카드가 같은 계산을 쓴다.
+  const triviaPicks =
+    isQuizGame(state.gameId)
+      ? (state.currentRound?.replay as TriviaReplayData | undefined)?.picks
+      : undefined;
+  const quizMetricFor = (tk: string): string | null => {
+    if (!triviaQuestions || !triviaPicks || !triviaFinalScores) return null;
+    const picks = triviaPicks[tk];
+    if (!picks) return null;
+    const correct = triviaQuestions.reduce(
+      (n, q, i) => (picks[i] === q.correctIndex ? n + 1 : n),
+      0,
+    );
+    return ko.result.quizMetric(correct, triviaQuestions.length, triviaFinalScores[tk] ?? 0);
+  };
+
+  // 공유 카드 지표 — 4b 규칙 그대로 게임별로 갈린다(검토 문서 5a). 퀴즈는 위 계산,
+  // 반응속도는 결과 화면과 같은 formatReactionOffset, 마블 계열은 "N명 중 꼴찌".
+  const cardMetricFor = (tk: string): string | null => {
+    const cat = gameCategory(state.gameId);
+    if (cat === 'quiz') return quizMetricFor(tk);
+    if (cat === 'reaction') {
+      const label = reactionOffsets ? formatReactionOffset(reactionOffsets[tk]) : null;
+      return label ? label.text : null;
+    }
+    // marble · live-marble — 등수 외 지표가 없으니 판의 크기가 곧 맥락.
+    return ko.result.marbleMetric(state.players.length);
+  };
+
   function leaveRoom() {
     router.push('/');
   }
@@ -109,8 +141,10 @@ export function ResultScreen({
 
         <LoserBlock
           losers={losers}
+          reason={loserReason}
           offsets={showReactionMs ? reactionOffsets : undefined}
           scores={showTriviaScores ? triviaFinalScores : undefined}
+          metricFor={quizMetricFor}
         />
 
         <div
@@ -123,10 +157,39 @@ export function ResultScreen({
           {iLost ? ko.result.youLost : ko.result.youWon}
         </div>
 
+        {/* 전체 순위는 항상 펼침 — 접어두면 놀릴 재료가 사라진다. 5명이면 접을 이유도 없다.
+            색만으로 구분하지 않도록 ✕ 벌칙 / ✓ 면제 라벨을 붙인다(색약 + 저화질 캡처). */}
+        {fullRanking.length > 0 && (
+          <div className="mt-8 w-full text-left">
+            <div className="flex items-baseline justify-between gap-2 px-1">
+              <h2 className="text-[13px] font-bold text-zinc-400">{ko.result.fullRanking}</h2>
+              <span className="text-[13px] text-zinc-600">
+                {ko.result.rankingSub(ko.games[state.gameId])}
+              </span>
+            </div>
+            <RankingList
+              ranking={fullRanking}
+              myToken={myToken}
+              loserTokens={result.losers}
+              offsets={showReactionMs ? reactionOffsets : undefined}
+              scores={showTriviaScores ? triviaFinalScores : undefined}
+            />
+          </div>
+        )}
+
         {/* 결과 카드 공유 + 재초대 — 호스트·게스트 공통. 단톡방으로 들고 나가는 바이럴
             고리(공유)와 다음 라운드에 늦은 친구를 합류시키는 고리(초대). */}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          <ResultShareButton losers={losers} />
+          <ResultShareButton
+            losers={losers}
+            header={ko.share.cardHeader(
+              `${GAME_META[state.gameId].emoji} ${ko.games[state.gameId]}`,
+              state.players.length,
+            )}
+            reasonBadge={ko.result.loserReasonBadge(loserReason)}
+            metric={losers.length === 1 ? cardMetricFor(losers[0].playerToken) : null}
+            winner={fullRanking[0] ? ko.share.cardWinner(fullRanking[0].nickname) : null}
+          />
           {inviteUrl && (
             <button
               type="button"
@@ -181,22 +244,13 @@ export function ResultScreen({
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
               <span>{ko.result.waitingNext}</span>
             </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowRanking((s) => !s)}
-                className="px-4 py-2.5 rounded-xl bg-transparent text-zinc-400 border border-zinc-800 text-[13px] font-semibold active:scale-[0.98]"
-              >
-                {showRanking ? ko.result.fullRankingHide : ko.result.fullRankingShow}
-              </button>
-              <button
-                type="button"
-                onClick={leaveRoom}
-                className="px-4 py-2.5 rounded-xl bg-transparent text-zinc-400 border border-zinc-800 text-[13px] font-semibold active:scale-[0.98]"
-              >
-                {ko.result.leaveRoom}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={leaveRoom}
+              className="px-4 py-2.5 rounded-xl bg-transparent text-zinc-400 border border-zinc-800 text-[13px] font-semibold active:scale-[0.98]"
+            >
+              {ko.result.leaveRoom}
+            </button>
             {canReplay && (
               <button
                 type="button"
@@ -211,35 +265,7 @@ export function ResultScreen({
 
         {/* 대기 시간 광고 — 액션 버튼 아래. 다음 라운드를 기다리는 동안 노출 */}
         <AdSlot placement="result" width={320} height={50} className="mt-6" />
-
-        {/* Inline ranking (guest disclosure) */}
-        {!isHost && showRanking && fullRanking.length > 0 && (
-          <RankingList
-            ranking={fullRanking}
-            myToken={myToken}
-            offsets={showReactionMs ? reactionOffsets : undefined}
-            scores={showTriviaScores ? triviaFinalScores : undefined}
-          />
-        )}
       </div>
-
-      {/* Host: ranking shown as compact disclosure below action grid (kept from v1, polished) */}
-      {isHost && fullRanking.length > 0 && (
-        <details className="relative z-10 mt-6 w-full max-w-sm rounded-xl bg-zinc-900/70 border border-zinc-800 px-4 py-3 text-left group">
-          <summary className="text-xs font-semibold text-zinc-400 cursor-pointer select-none list-none flex items-center justify-between">
-            <span>{ko.result.fullRanking}</span>
-            <span className="text-zinc-600 transition-transform group-open:rotate-180">▾</span>
-          </summary>
-          <div className="border-t border-zinc-800 mt-3 pt-3">
-            <RankingList
-            ranking={fullRanking}
-            myToken={myToken}
-            offsets={showReactionMs ? reactionOffsets : undefined}
-            scores={showTriviaScores ? triviaFinalScores : undefined}
-          />
-          </div>
-        </details>
-      )}
 
       {/* Trivia: filtered "특이점" detail. Hides questions where everyone got the
           same outcome (all right / all wrong / all skipped) — only shows the rounds
@@ -271,12 +297,16 @@ export function ResultScreen({
 
 function LoserBlock({
   losers,
+  reason,
   offsets,
   scores,
+  metricFor,
 }: {
   losers: { playerToken: string; nickname: string; color: string }[];
+  reason: string;
   offsets?: Record<string, number | null>;
   scores?: Record<string, number>;
+  metricFor?: (playerToken: string) => string | null;
 }) {
   const n = losers.length;
   const nameSize = n === 1 ? 80 : n === 2 ? 56 : 44;
@@ -285,9 +315,15 @@ function LoserBlock({
 
   return (
     <div className="mt-9 flex flex-col items-center" style={{ gap: lineGap }}>
+      {/* 기울어진 "벌칙 당첨" 스탬프 — 단톡방 캡처에서 누가 걸렸는지 1초에 읽히게.
+          이름 위로 겹치지 않도록 이름 블록 바로 위에 얹는다. */}
+      <div className="relative mb-3 -rotate-[7deg] rounded-lg border-[2.5px] border-red-500/70 px-3.5 py-1 text-[15px] font-black tracking-[0.08em] text-red-400">
+        {ko.result.stamp}
+      </div>
       {losers.map((p) => {
         const offsetLabel = offsets ? formatReactionOffset(offsets[p.playerToken]) : null;
         const scoreVal = scores ? (scores[p.playerToken] ?? 0) : null;
+        const metric = metricFor?.(p.playerToken) ?? null;
         return (
           <div key={p.playerToken} className="flex flex-col items-center gap-3.5">
             <div
@@ -311,8 +347,8 @@ function LoserBlock({
               <span>{p.nickname}</span>
             </div>
             <div className="flex items-center gap-1.5 flex-wrap justify-center">
-              <div className="inline-flex items-center px-3 py-1 rounded-full bg-white/[0.05] border border-white/[0.08] text-xs text-zinc-400 font-bold uppercase tracking-[0.06em]">
-                {ko.result.loserBadge}
+              <div className="inline-flex items-center rounded-full border border-red-500/30 bg-red-500/15 px-3 py-1 text-xs font-bold text-red-300">
+                {ko.result.loserReasonBadge(reason)}
               </div>
               {offsetLabel && (
                 <div
@@ -328,12 +364,14 @@ function LoserBlock({
                   {offsetLabel.text}
                 </div>
               )}
-              {scoreVal != null && (
+              {metric == null && scoreVal != null && (
                 <div className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold tabular-nums border bg-amber-400/10 border-amber-400/30 text-amber-200">
                   {ko.trivia.yourScore(scoreVal)}
                 </div>
               )}
             </div>
+            {/* 퀴즈는 점수만으론 왜 졌는지 안 보인다 — 정답 수까지 한 줄로. */}
+            {metric && <div className="text-[13px] text-zinc-400 tabular-nums">{metric}</div>}
           </div>
         );
       })}
@@ -344,27 +382,34 @@ function LoserBlock({
 function RankingList({
   ranking,
   myToken,
+  loserTokens,
   offsets,
   scores,
 }: {
   ranking: { playerToken: string; nickname: string; color: string }[];
   myToken: string | null;
+  loserTokens: string[];
   offsets?: Record<string, number | null>;
   scores?: Record<string, number>;
 }) {
   return (
-    <ul className="mt-3 w-full max-w-sm space-y-1.5">
+    <ul className="mt-2 w-full max-w-sm space-y-1.5">
       {ranking.map((p, i) => {
         const rank = i + 1;
         const isMe = p.playerToken === myToken;
+        const isLoser = loserTokens.includes(p.playerToken);
         const offsetLabel = offsets ? formatReactionOffset(offsets[p.playerToken]) : null;
         const scoreVal = scores ? (scores[p.playerToken] ?? 0) : null;
         return (
           <li
             key={p.playerToken}
             className={clsx(
-              'flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm',
-              isMe && 'bg-amber-400/15',
+              'flex items-center gap-2.5 rounded-lg px-2 py-2 text-[15px]',
+              isLoser
+                ? 'bg-red-500/15 ring-1 ring-red-500/30'
+                : isMe
+                  ? 'bg-amber-400/15'
+                  : undefined,
             )}
           >
             <span className="w-7 text-right text-xs font-bold text-zinc-500 tabular-nums">
@@ -378,10 +423,22 @@ function RankingList({
             <span
               className={clsx(
                 'flex-1 truncate',
-                isMe ? 'text-amber-300 font-bold' : 'text-zinc-200',
+                isLoser
+                  ? 'text-red-200 font-bold'
+                  : isMe
+                    ? 'text-amber-300 font-bold'
+                    : 'text-zinc-200',
               )}
             >
               {p.nickname}
+            </span>
+            <span
+              className={clsx(
+                'shrink-0 text-[11px] font-bold',
+                isLoser ? 'text-red-300' : 'text-zinc-600',
+              )}
+            >
+              {isLoser ? ko.result.rowLoser : ko.result.rowSafe}
             </span>
             {offsetLabel && (
               <span

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import clsx from 'clsx';
 import { ko } from '@/lib/i18n';
 import { GAME } from '@/lib/constants';
 import { getSocket } from '@/lib/socket-client';
@@ -170,10 +171,62 @@ export function ChargePhase() {
         </div>
       </button>
 
-      {/* Gauges */}
+      {/* Gauges — 내 것과 전체 평균, 그리고 참가자별 실황.
+          서버가 `charge:state.totals`로 참가자별 탭 수를 250ms마다 이미 보내는데
+          UI는 평균 한 줄로만 뭉개고 있었다. 같은 데이터로 이름별 바를 그린다. */}
       <div className="px-6 pb-4 space-y-3">
         <Gauge label={ko.charge.myGauge} ratio={myRatio} color={myColor} />
         <Gauge label={ko.charge.avgGauge} ratio={avgRatio} color="#a1a1aa" />
+
+        {players.length > 1 && (
+          <div className="space-y-1.5">
+            <div className="text-xs text-zinc-500">{ko.charge.everyoneTitle}</div>
+            {/* max-h: 30명 방에서도 탭 존(주 행동)을 밀어내지 않게 목록만 스크롤. */}
+            <ul className="max-h-36 space-y-1 overflow-y-auto">
+              {players.map((p) => {
+                const isMe = p.playerToken === myToken;
+                // manual(폰 없는) 참가자는 서버가 고정값으로 채운다 — 탭 수가 올 리 없다.
+                const ratio = p.manual
+                  ? GAME.CHARGE_MANUAL_DEFAULT
+                  : isMe
+                    ? myRatio
+                    : Math.min(1, (serverTotals[p.playerToken] ?? 0) / cap);
+                return (
+                  <li key={p.playerToken} className="flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ background: p.color }}
+                    />
+                    <span
+                      className={clsx(
+                        'w-16 shrink-0 truncate text-[12px]',
+                        isMe ? 'font-bold text-zinc-100' : 'text-zinc-400',
+                      )}
+                    >
+                      {p.nickname}
+                    </span>
+                    {p.manual && (
+                      <span className="shrink-0 rounded bg-white/[0.07] px-1 text-[10px] font-bold text-zinc-500">
+                        {ko.charge.autoBadge}
+                      </span>
+                    )}
+                    <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
+                      <span
+                        className="block h-full transition-[width] duration-150"
+                        style={{
+                          width: `${Math.round(ratio * 100)}%`,
+                          background: p.manual ? '#52525b' : p.color,
+                        }}
+                      />
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         <p className="text-xs text-zinc-600 text-center">{ko.charge.manualNote}</p>
       </div>
 

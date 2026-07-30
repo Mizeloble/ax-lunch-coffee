@@ -23,23 +23,33 @@ export const ko = {
   },
   landing: {
     createRoom: '방 만들기',
+    // CTA 아래 한 줄 — "누르면 뭐가 되는지"를 버튼 자체보다 구체적으로.
+    createRoomSub: 'QR이 바로 떠요 · 3초',
     creating: '생성 중…',
     description: 'QR을 찍어 모인 사람들끼리 게임으로 벌칙 정해요',
     createFailed: '방 생성에 실패했어요. 다시 시도해주세요.',
     busy: '지금 접속이 몰려요. 잠시 후 다시 시도해주세요',
+    // 히어로 헤드라인 — accent('벌칙')만 빨강. 색이 의미를 나누는 규칙의 출발점.
+    heroTitle: { pre: '오늘 ', accent: '벌칙', post: ',', line2: '누가 걸릴까' },
+    heroSub: 'QR 한 번 찍고 모여서 미니게임 한 판. 꼴찌가 벌칙.',
     howTitle: '이렇게 즐겨요',
     steps: [
       '방을 만들면 QR 코드가 떠요',
       '친구들이 QR을 스캔해 바로 입장 (2~30명)',
       '미니게임 한 판으로 벌칙 당첨자 결정',
     ],
+    // 히어로 바로 아래 한 줄 스트립 — 위 steps의 압축판(같은 순서).
+    stepsShort: ['① 방 만들기', '② QR 스캔', '③ 꼴찌 벌칙'],
     gamesTitle: (n: number) => `미니게임 ${n}종`,
-    installFree: '앱 설치 없이 폰 브라우저로',
+    gamesSubtitle: '한 판 6~40초',
+    installFree: '설치 없음 · 무료',
     openSource: '오픈소스 · MIT',
+    openSourceShort: '오픈소스(MIT)',
     demoAlt: '미니게임 하이라이트 미리보기',
+    demoCaption: (n: number) => `미니게임 ${n}종 미리보기`,
     // QR을 못 찍는 상황(카메라 없음·링크만 받음)을 위한 방 코드 직접 입력.
-    joinByCodeTitle: '코드로 입장',
-    joinByCodePlaceholder: '방 코드 (예: ABCD)',
+    joinByCodeTitle: '이미 방이 열려 있나요?',
+    joinByCodePlaceholder: '방 코드 4자리',
     joinByCodeSubmit: '입장',
     joinByCodeInvalid: '방 코드를 확인해주세요',
     // 검색 유입용 FAQ — 랜딩 하단 노출 + FAQPage JSON-LD 동일 출처.
@@ -69,11 +79,35 @@ export const ko = {
   },
   lobby: {
     waiting: '참가자를 기다리는 중',
-    waitingHostPicking: '호스트가 게임을 고르는 중이에요. 같이 기다려요.',
     rosterSomeOffline: '일부 재접속 대기',
     rosterCount: (n: number) => `참가자 ${n}명`,
+    // 방 코드는 술자리에서 제일 자주 소리내어 묻는 값 — 헤더에서 크게.
+    roomCodeLabel: '방 코드',
+    roomCodeHint: '스캔해서 입장',
+    // 섹션 제목 — 호스트가 위에서 아래로 훑는 순서(누가 → 뭐로 → 몇 명).
+    rosterTitle: '모인 사람',
+    pickerTitle: '뭐로 정할까',
+    loserCountTitle: '몇 명 걸릴까',
+    // 시작 버튼 — 게임 이름을 버튼에 넣고 조건은 아래 한 줄 요약으로.
+    startWithGame: (game: string) => `${game} 시작`,
+    startSummary: (players: number, seconds: number, losers: number) =>
+      `${players}명 · ${seconds}초 · 꼴찌 ${losers}명 벌칙`,
+    addManualShort: '폰 없는 사람',
+    // 게스트 전용 — 뭘 기다리는 중인지 명시해서 폰을 계속 볼 필요를 없앤다.
+    guestHostTurn: '호스트 차례',
+    guestHostPicking: (host: string) => `${host}이(가) 게임을 고르고 있어요`,
+    guestHostPickingNoName: '호스트가 게임을 고르고 있어요',
+    guestAutoAdvance: '시작되면 이 화면이 알아서 넘어가요. 폰 안 봐도 돼요.',
+    guestWaitingStart: '시작을 기다리는 중…',
+    // 연결 상태 — 서버가 이미 뿌리는 connected를 1급 정보로 승격.
+    connected: '연결됨',
+    disconnected: '연결 끊김',
+    reconnectGrace: (name: string, seconds: number) =>
+      `${name}은(는) ${seconds}초 안에 돌아오면 그대로 참가, 아니면 목록에서 빠져요.`,
+    leaveRoom: '방 나가기',
     invite: '초대하기',
     inviteShort: '초대',
+    inviteFriendsShort: '친구 초대',
     inviteScan: '옆자리 사람이 스캔하면 같은 방 입장',
     // 호스트 혼자일 때 로비 상단 인라인 QR 카드 — 랜딩 1단계("방을 만들면 QR이 떠요") 약속 이행.
     inviteFirstTitle: '친구들을 초대하세요',
@@ -83,6 +117,10 @@ export const ko = {
     share: '공유하기',
     linkCopied: '링크가 복사되었어요',
     chooseGame: '게임 선택',
+    // 게임 선택 필터 — 게임이 늘어도 화면이 안 길어지게.
+    pickerAll: (n: number) => `전체 ${n}`,
+    pickerRandom: '랜덤',
+    pickerRandomAria: '무작위 게임 고르기',
     loserCount: '벌칙 받을 사람 수',
     loserCountUnit: (n: number) => `${n}명`,
     start: '시작',
@@ -136,7 +174,25 @@ export const ko = {
     losers: (n: number) => `오늘 벌칙은 ${n}명!`,
     headerChip: '오늘의 벌칙',
     countBadge: (n: number) => `× ${n}명`,
-    loserBadge: '패자',
+    // 기울어진 스탬프 — 단톡방 캡처에서 "누가 걸렸나"가 1초에 읽히게.
+    stamp: '벌칙 당첨',
+    // 패자 사유는 게임마다 다르다 — 고정 문구를 쓰면 퀴즈에서 거짓말이 된다.
+    loserReason: {
+      marble: '꼴찌',
+      'live-marble': '꼴찌',
+      reaction: '가장 늦게',
+      quiz: '최저 점수',
+    },
+    loserReasonBadge: (reason: string) => `✕ ${reason} · 벌칙`,
+    // 색만으로 구분하지 않기 — 색약 사용자 + 저화질 캡처 대응.
+    rowLoser: '✕ 벌칙',
+    rowSafe: '✓ 면제',
+    // 게임별 지표 한 줄 — 결과 화면과 공유 카드가 같은 문구를 쓴다.
+    // 퀴즈=정답 수·점수, 반응속도=ms(formatReactionOffset 재사용), 마블="N명 중 꼴찌".
+    quizMetric: (correct: number, total: number, score: number) =>
+      `${total}문제 중 ${correct}개 정답 · ${score.toLocaleString()}점`,
+    marbleMetric: (total: number) => `${total}명 중 꼴찌`,
+    rankingSub: (game: string) => game,
     again: '다시 하기',
     changeGame: '게임 바꾸기',
     closeRoom: '방 닫기',
@@ -145,8 +201,6 @@ export const ko = {
     youWon: '운 좋게 면제!',
     tapToContinue: '결과 보기',
     fullRanking: '전체 순위',
-    fullRankingShow: '전체 순위 보기',
-    fullRankingHide: '순위 숨기기',
     invite: '친구 부르기',
     waitingNext: '호스트가 다음 라운드를 준비 중',
     waitingNextLong: '호스트가 다음 라운드를 시작할 거예요',
@@ -186,6 +240,10 @@ export const ko = {
     failed: '공유 실패 · 다시 시도',
     cardSub: '오늘 벌칙 당첨 🎯',
     shareText: '복불복에서 오늘의 벌칙을 정했어요 🎯',
+    // 카드 맥락 3줄 — 이름만 있으면 놀릴 재료도, "뭐 하는 앱이지?"도 안 생긴다.
+    cardHeader: (game: string, players: number) => `${game} · ${players}명`,
+    cardWinner: (name: string) => `1위 ${name} 🏆`,
+    cardCta: '방 코드 없이 링크 하나로 시작',
   },
   games: {
     marble: '마블 레이스',
@@ -203,6 +261,20 @@ export const ko = {
     triviaEstimate: (s: number) => `~${s}초 · 상식 퀴즈`,
     nonsenseEstimate: (s: number) => `~${s}초 · 넌센스 퀴즈`,
     secEstimate: (s: number) => `~${s}초`,
+    // 짧은 부제 — 좁은 2열 타일/칩용. "무엇이 승부를 가르나"를 한 낱말로.
+    marbleShort: (s: number) => `${s}초 · 운빨 100%`,
+    cheerShort: (s: number) => `${s}초 · 탭 충전`,
+    tiltShort: (s: number) => `${s}초 · 폰 기울이기`,
+    reactionShort: (s: number) => `${s}초 · 제일 빠른 손`,
+    triviaShort: (s: number) => `${s}초 · 5문제`,
+    nonsenseShort: (s: number) => `${s}초 · 말장난`,
+  },
+  // GAME_META.category 그대로를 사용자 언어로. 게임 선택 필터 칩 + 타일 부제에 공유.
+  gameCategories: {
+    marble: '운빨',
+    'live-marble': '자이로',
+    reaction: '순발력',
+    quiz: '퀴즈',
   },
   // 로비 게임 카드의 한 줄 소개("뭐 하는 게임인지 + 벌칙 조건"). 상세 규칙은 gameIntros.
   gameDesc: {
@@ -289,8 +361,13 @@ export const ko = {
     secondsLeft: (s: number) => `${s}초`,
     myGauge: '내 응원',
     avgGauge: '전체 평균',
-    manualNote: '폰 없는 참가자는 평균값으로 자동 충전돼요',
+    // 서버는 manual 참가자에게 고정값(CHARGE_MANUAL_DEFAULT)을 주지 평균을 주지 않는다 —
+    // 참가자별 바를 노출한 뒤로는 "평균값" 문구가 화면과 어긋나 보인다.
+    manualNote: '폰 없는 참가자는 절반만큼 자동으로 충전돼요',
     starting: '시작!',
+    // 서버가 250ms마다 참가자별 탭 수를 보내는데 평균 한 줄로만 뭉개고 있었다.
+    everyoneTitle: '전체 응원',
+    autoBadge: '자동',
   },
   marble: {
     paneLoserView: '🎯 꼴찌 시점',
@@ -311,9 +388,25 @@ export const ko = {
     hostNotice: '참가자만 자이로 조작이 활성화돼요',
     boostButton: '부스트',
     boostLabel: '부스트',
+    // 서버가 강제하는 값(BOOST_BUDGET_MAX·BOOST_COOLDOWN_MS)을 그대로 보여준다 —
+    // 3발 한정이라 "언제 쓸지"가 이 게임의 유일한 판단인데 지금은 감춰져 있었다.
+    boostRemaining: (n: number, max: number) => `${n} / ${max} 남음`,
+    boostCooldown: (s: string) => `${s}초`,
+    boostCooldownLabel: '쿨다운',
+    // 권한 거부 — 한 줄 안내로 끝내면 "조작 못 하는 게임에 그냥 참가"가 된다.
+    deniedTitle: '기울임 조작이 꺼져 있어요',
+    deniedBody: '권한이 거부되어 자동 진행돼요. 내 구슬은 조작 없이 굴러가요 — 꼴찌 확률이 높아요.',
+    deniedBadge: '✕ 조작 불가 · 자동 진행',
+    deniedHelpTitle: '계속 안 되면',
+    deniedHelpBody:
+      '설정 → Safari → 동작 및 방향 접근 허용, 또는 호스트에게 다른 게임으로 바꿔달라고 하세요.',
+    deniedAccept: '조작 없이 그냥 참가하기',
+    unsupportedBody: '이 기기는 기울임 센서가 없어 자동 진행돼요. 내 구슬은 조작 없이 굴러가요.',
   },
   reaction: {
-    ready: '준비…',
+    // 노랑=탭 / 빨강=아직·위반 신호등 규칙. "준비…"는 눌러도 되는 것처럼 읽혔다.
+    ready: '아직!',
+    readyRule: '지금 누르면 위반 — 꼴찌 직행',
     readySub: '노란불에 탭!',
     go: '지금!',
     goSub: '탭!',
@@ -344,6 +437,8 @@ export const ko = {
     startingCountdown: (s: number) => (s > 0 ? `${s}` : '시작!'),
     scoreToastGain: (n: number) => `+${n.toLocaleString()}`,
     comboBadge: (n: number) => `🔥 ${n} COMBO!`,
+    // 점수 규칙(속도+콤보)이 UI에 안 보여서 "왜 이겼는지"를 아무도 몰랐다 — 상시 노출.
+    comboInline: (n: number) => `🔥 ${n}연속`,
     lastQuestionBadge: '마지막 · 점수 2배',
     midRankTitle: '현재 순위',
     rankPos: (n: number) => `${n}위`,

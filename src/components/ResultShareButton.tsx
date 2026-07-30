@@ -7,11 +7,22 @@ import { shareResultCard } from '@/lib/share-card';
 /**
  * 결과 화면 공유 버튼 — 꼴찌 카드(이미지)를 즉석 렌더해 공유 시트로 내보낸다.
  * 호스트·게스트 모두 노출. 바이럴 고리의 핵심: 단톡방으로 브랜드가 들어가는 통로.
+ *
+ * 맥락(게임·인원·사유·지표·1위)은 결과 화면이 이미 계산해 둔 값을 그대로 받는다 —
+ * 카드와 화면이 같은 출처를 쓰면 둘이 어긋날 수 없다.
  */
 export function ResultShareButton({
   losers,
+  header,
+  reasonBadge,
+  metric,
+  winner,
 }: {
   losers: { nickname: string; color: string }[];
+  header?: string;
+  reasonBadge?: string;
+  metric?: string | null;
+  winner?: string | null;
 }) {
   const [status, setStatus] = useState<'idle' | 'busy' | 'saved' | 'failed'>('idle');
 
@@ -23,6 +34,10 @@ export function ResultShareButton({
     const r = await shareResultCard({
       losers: losers.map((p) => ({ nickname: p.nickname, color: p.color })),
       origin: window.location.origin,
+      header,
+      reasonBadge,
+      metric,
+      winner,
     });
     if (r === 'saved' || r === 'failed') {
       setStatus(r);

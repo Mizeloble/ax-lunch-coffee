@@ -17,6 +17,18 @@ export interface ShareCardData {
   losers: ShareCardLoser[];
   /** 카드 푸터·공유 URL의 기준. 보통 window.location.origin */
   origin: string;
+  // ── 맥락 3줄 (5a) ────────────────────────────────────────────────────────
+  // 이름만 있는 카드는 당사자 말고 아무도 안 웃는다. 무슨 게임이었는지, 몇 명 중
+  // 꼴찌인지, 얼마나 아깝게 졌는지가 놀릴 재료다. 전부 결과 화면에 이미 있는 값이라
+  // 서버 왕복 없이 그릴 수 있다.
+  /** 카드 상단 칩 — "🤪 넌센스 퀴즈 · 5명". */
+  header?: string;
+  /** 패자 사유 배지 — "✕ 최저 점수 · 벌칙". 게임마다 다르다. */
+  reasonBadge?: string;
+  /** 게임별 지표 한 줄 — "5문제 중 1개 정답 · 640점". 벌칙이 1명일 때만 그린다. */
+  metric?: string | null;
+  /** 1위 한 줄 — "1위 민준 🏆". 이긴 사람이 카드를 한 번 더 퍼뜨린다. */
+  winner?: string | null;
 }
 
 /** 카카오톡·인스타에 잘 맞는 정사각 1080. */
@@ -74,39 +86,26 @@ export async function renderResultCard(data: ShareCardData): Promise<Blob> {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // 상단 마블 색 점 줄 — OG·랜딩과 같은 브랜드 정체성(은은하게).
-  const dotCount = Math.min(7, MARBLE_COLORS.length);
-  const dotR = 11;
-  const dotGap = 34;
-  const dotsW = (dotCount - 1) * dotGap;
-  ctx.save();
-  ctx.globalAlpha = 0.85;
-  for (let i = 0; i < dotCount; i++) {
-    ctx.beginPath();
-    ctx.arc(SIZE / 2 - dotsW / 2 + i * dotGap, 92, dotR, 0, Math.PI * 2);
-    ctx.fillStyle = MARBLE_COLORS[i];
-    ctx.fill();
-  }
-  ctx.restore();
-
-  // 상단 칩 — 🎯 오늘의 벌칙
-  const chipText = `🎯 ${ko.result.headerChip}`;
-  ctx.font = `700 30px ${FONT}`;
-  const chipW = ctx.measureText(chipText).width + 56;
-  const chipH = 64;
+  // 상단 칩 — 무슨 게임이었고 몇 명 중 꼴찌였나. 브랜드 점 줄은 하단으로 내렸다
+  // (y=92는 카톡 썸네일에서 가장 먼저 잘리는 영역이다).
+  const chipText = data.header ?? `🎯 ${ko.result.headerChip}`;
+  ctx.font = `700 34px ${FONT}`;
+  const chipW = ctx.measureText(chipText).width + 60;
+  const chipH = 70;
   const chipX = (SIZE - chipW) / 2;
-  const chipY = 150;
+  const chipY = 96;
   ctx.fillStyle = 'rgba(255,255,255,0.05)';
-  roundRect(ctx, chipX, chipY, chipW, chipH, 32);
+  roundRect(ctx, chipX, chipY, chipW, chipH, 35);
   ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-  roundRect(ctx, chipX, chipY, chipW, chipH, 32);
+  roundRect(ctx, chipX, chipY, chipW, chipH, 35);
   ctx.stroke();
-  ctx.fillStyle = '#d4d4d8';
+  ctx.fillStyle = '#e4e4e7';
   ctx.fillText(chipText, SIZE / 2, chipY + chipH / 2 + 2);
 
-  // 꼴찌 이름 블록 — 화면 중앙. 인원수에 따라 크기 가변.
+  // 꼴찌 이름 블록 — 카드의 주인공. 크기(150/104/78px)와 색 글로우는 썸네일에서
+  // 읽히는 유일한 요소라 그대로 둔다. 맥락은 남는 여백에만 채운다.
   const n = data.losers.length;
   const nameSize = n === 1 ? 150 : n === 2 ? 104 : 78;
   const gap = n === 1 ? 0 : 28;
@@ -114,7 +113,8 @@ export async function renderResultCard(data: ShareCardData): Promise<Blob> {
   // 닉네임 최대 10자(NICKNAME.MAX_LENGTH)라 1명 케이스(150px)는 넘칠 수 있음.
   const maxNameW = SIZE - 140;
   const blockH = n * nameSize + (n - 1) * gap;
-  let y = SIZE / 2 - blockH / 2 + nameSize / 2 - 20;
+  const blockTop = 430 - blockH / 2;
+  let y = blockTop + nameSize / 2;
 
   for (const p of data.losers) {
     // 폭에 맞춰 폰트 축소 (점·간격 0.46은 폰트에 비례하므로 함께 반영).
@@ -150,24 +150,80 @@ export async function renderResultCard(data: ShareCardData): Promise<Blob> {
     y += nameSize + gap;
   }
 
-  // 서브라인 — 오늘 벌칙 당첨 🎯
-  ctx.font = `700 42px ${FONT}`;
-  ctx.fillStyle = '#fda4af';
-  ctx.fillText(ko.share.cardSub, SIZE / 2, SIZE / 2 + blockH / 2 + 80);
-
-  // 푸터 — 브랜드 + 도메인 (유입 훅)
+  // 사유 배지 — "✕ 최저 점수 · 벌칙". 빨강은 카드에서도 벌칙 전용색.
+  let cursorY = blockTop + blockH + 74;
+  const badgeText = data.reasonBadge ?? ko.share.cardSub;
   ctx.font = `800 40px ${FONT}`;
-  ctx.fillStyle = '#fbbf24';
-  ctx.fillText(ko.app.title, SIZE / 2, SIZE - 152);
+  const badgeW = ctx.measureText(badgeText).width + 56;
+  const badgeH = 72;
+  ctx.fillStyle = 'rgba(239,68,68,0.16)';
+  roundRect(ctx, (SIZE - badgeW) / 2, cursorY - badgeH / 2, badgeW, badgeH, 36);
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(239,68,68,0.4)';
+  roundRect(ctx, (SIZE - badgeW) / 2, cursorY - badgeH / 2, badgeW, badgeH, 36);
+  ctx.stroke();
+  ctx.fillStyle = '#fca5a5';
+  ctx.fillText(badgeText, SIZE / 2, cursorY + 2);
+  cursorY += 78;
+
+  // 지표 한 줄 — 벌칙이 2명 이상이면 줄이 길어져 이름과 경쟁하므로 생략한다.
+  if (data.metric && n === 1) {
+    ctx.font = `500 36px ${FONT}`;
+    ctx.fillStyle = '#a1a1aa';
+    ctx.fillText(data.metric, SIZE / 2, cursorY);
+    cursorY += 62;
+  }
+
+  // 1위 한 줄 — 벌칙자만 있으면 당사자만 반응한다. 이긴 사람 이름이 있으면
+  // 그 사람이 카드를 한 번 더 퍼뜨린다.
+  if (data.winner) {
+    ctx.font = `700 34px ${FONT}`;
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillText(data.winner, SIZE / 2, cursorY);
+  }
+
+  // 푸터 — 브랜드 점 줄 + 브랜드 + 도메인 + CTA (유입 훅).
+  // 카드가 기념품에 그치지 않으려면 "어떻게 하는 건데?"의 답이 한 줄 있어야 한다.
+  const dotCount = Math.min(7, MARBLE_COLORS.length);
+  const dotR = 9;
+  const dotGap = 30;
+  const dotsW = (dotCount - 1) * dotGap;
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  for (let i = 0; i < dotCount; i++) {
+    ctx.beginPath();
+    ctx.arc(SIZE / 2 - dotsW / 2 + i * dotGap, SIZE - 218, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = MARBLE_COLORS[i];
+    ctx.fill();
+  }
+  ctx.restore();
+
   let host = data.origin;
   try {
     host = new URL(data.origin).host.replace(/^www\./, '');
   } catch {
     /* origin이 URL이 아니면 원문 그대로 */
   }
-  ctx.font = `500 30px ${FONT}`;
+  ctx.font = `800 40px ${FONT}`;
+  const brandW = ctx.measureText(ko.app.title).width;
+  ctx.font = `500 32px ${FONT}`;
+  const hostW = ctx.measureText(host).width;
+  const sepW = 20;
+  const lineW = brandW + sepW * 2 + hostW;
+  const lineLeft = (SIZE - lineW) / 2;
+  ctx.textAlign = 'left';
+  ctx.font = `800 40px ${FONT}`;
+  ctx.fillStyle = '#fbbf24';
+  ctx.fillText(ko.app.title, lineLeft, SIZE - 148);
+  ctx.font = `500 32px ${FONT}`;
   ctx.fillStyle = '#71717a';
-  ctx.fillText(host, SIZE / 2, SIZE - 100);
+  ctx.fillText(host, lineLeft + brandW + sepW * 2, SIZE - 146);
+  ctx.textAlign = 'center';
+
+  ctx.font = `600 30px ${FONT}`;
+  ctx.fillStyle = '#52525b';
+  ctx.fillText(ko.share.cardCta, SIZE / 2, SIZE - 88);
 
   return await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(

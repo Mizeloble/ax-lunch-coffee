@@ -6,6 +6,7 @@ import { ko } from '@/lib/i18n';
 import { getSocket } from '@/lib/socket-client';
 import { haptics } from '@/games/marble/haptics';
 import { GAME } from '@/lib/constants';
+import { GAME_META, type GameId } from '@/games/types';
 import type { TriviaReschedulePayload, TriviaStandingsPayload } from '@/lib/protocol';
 import { computeRunningScores } from './scoring';
 import type { TriviaReplayData } from './server';
@@ -19,12 +20,8 @@ type CurrentPhase =
   | { kind: 'final' };
 
 const CHOICE_LABELS = ['A', 'B', 'C', 'D'] as const;
-const CHOICE_BG = [
-  'bg-rose-500/15 border-rose-500/40 text-rose-100',
-  'bg-amber-500/15 border-amber-500/40 text-amber-100',
-  'bg-emerald-500/15 border-emerald-500/40 text-emerald-100',
-  'bg-sky-500/15 border-sky-500/40 text-sky-100',
-] as const;
+// 보기 4개를 4색으로 칠하면 색이 "정답 힌트"처럼 읽힌다 — 중립 카드 + 글자 배지로 통일.
+const CHOICE_NEUTRAL = 'border-white/10 bg-white/[0.05] text-zinc-100';
 
 /**
  * Trivia game UI. Phases driven entirely by wall-clock against the schedule embedded
@@ -39,11 +36,14 @@ const CHOICE_BG = [
  * standings come from the result payload, not from this preview.
  */
 export function TriviaRenderer({
+  gameId,
   startAt,
   replay,
   players,
   myPlayerToken,
 }: {
+  /** trivia | nonsense — the engine is shared, only the label & emoji differ. */
+  gameId: GameId;
   startAt: number;
   durationMs: number;
   replay: TriviaReplayData;
@@ -145,6 +145,10 @@ export function TriviaRenderer({
   }, [now, startAt, schedule, replay]);
 
   const myScore = revealedThrough >= 0 ? myRunning.cumulative[revealedThrough] : 0;
+  // 점수 규칙(속도 + 콤보 보너스)이 UI 어디에도 없어서 "왜 이겼는지"를 아무도 몰랐다.
+  // 현재 연속 정답 수를 헤더에 상시 노출한다 — 토스트는 1.5초 뒤 사라진다.
+  const myCombo =
+    revealedThrough >= 0 ? (myRunning.perQuestion[revealedThrough]?.comboAfter ?? 0) : 0;
 
   // Question-open haptic (once per qIndex)
   useEffect(() => {
@@ -239,6 +243,7 @@ export function TriviaRenderer({
       }}
     >
       <Header
+        gameLabel={`${GAME_META[gameId].emoji} ${ko.games[gameId]}`}
         questionLabel={
           phase.kind === 'question' || phase.kind === 'reveal'
             ? ko.trivia.questionLabel(phase.qIndex + 1, replay.questions.length)
@@ -250,6 +255,7 @@ export function TriviaRenderer({
             : null
         }
         score={myScore}
+        combo={myCombo}
         isLast={isLastQuestion}
       />
 
@@ -257,9 +263,12 @@ export function TriviaRenderer({
         <ProgressBar remainingMs={phase.closeAt - now} totalMs={GAME.TRIVIA_QUESTION_MS} />
       )}
 
-      <div className="flex-1 px-4 pt-3 pb-2 flex flex-col">
+      {/* min-h-0: 답변 중에는 보기 그리드가 남은 높이를 균등 분할해야 하는데,
+          min-h-0 없이는 flex-1이 콘텐츠 높이 아래로 줄어들지 않아 4번째 보기가 잘린다. */}
+      <div className="flex-1 min-h-0 px-4 pt-3 pb-2 flex flex-col overflow-y-auto">
         {phase.kind === 'pre' && (
           <PreView
+            emoji={GAME_META[gameId].emoji}
             secondsToStart={Math.max(0, Math.ceil((startAt - now) / 1000))}
             totalQuestions={replay.questions.length}
           />
@@ -289,47 +298,61 @@ export function TriviaRenderer({
 }
 
 function Header({
+  gameLabel,
   questionLabel,
   timeLeftSec,
   score,
+  combo,
   isLast,
 }: {
+  gameLabel: string;
   questionLabel: string;
   timeLeftSec: number | null;
   score: number;
+  combo: number;
   isLast: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between px-4 pt-2 pb-1.5">
-      <div className="flex items-baseline gap-2">
-        <span className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">
-          🧠 {ko.games.trivia}
+    <div className="px-4 pt-2 pb-1.5 space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-xs font-bold uppercase tracking-[0.14em] text-zinc-500">
+          {gameLabel}
         </span>
-        {questionLabel && (
-          <span className="text-sm font-black text-amber-400 tabular-nums">{questionLabel}</span>
-        )}
-        {isLast && (
-          <span className="rounded-md bg-rose-500/20 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-rose-300 ring-1 ring-rose-500/40">
-            {ko.trivia.lastQuestionBadge}
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-2">
         {timeLeftSec != null && (
           <span
             className={clsx(
-              'rounded-full px-2.5 py-1 text-xs font-black tabular-nums',
+              'shrink-0 rounded-full px-2.5 py-1 text-xs font-black tabular-nums',
               timeLeftSec <= 3
-                ? 'bg-rose-500/20 text-rose-200 ring-1 ring-rose-500/40'
+                ? 'bg-red-500/20 text-red-200 ring-1 ring-red-500/40'
                 : 'bg-zinc-800 text-zinc-300',
             )}
           >
             {ko.trivia.timeLeft(timeLeftSec)}
           </span>
         )}
-        <span className="rounded-full bg-amber-400/15 px-2.5 py-1 text-xs font-black text-amber-300 ring-1 ring-amber-400/30 tabular-nums">
-          {ko.trivia.scoreLabel} {ko.trivia.yourScore(score)}
-        </span>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {questionLabel && (
+            <span className="text-sm font-black text-amber-400 tabular-nums">{questionLabel}</span>
+          )}
+          {/* 마지막 문제는 점수 2배 = 역전 가능 구간. 긴장이 필요한 유일한 순간이라 빨강. */}
+          {isLast && (
+            <span className="shrink-0 rounded-md bg-red-500/20 px-1.5 py-0.5 text-[11px] font-black tracking-wider text-red-300 ring-1 ring-red-500/40">
+              {ko.trivia.lastQuestionBadge}
+            </span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {combo >= 2 && (
+            <span className="rounded-full bg-amber-400/15 px-2 py-1 text-[11px] font-black text-amber-300 ring-1 ring-amber-400/30 tabular-nums">
+              {ko.trivia.comboInline(combo)}
+            </span>
+          )}
+          <span className="rounded-full bg-amber-400/15 px-2.5 py-1 text-xs font-black text-amber-300 ring-1 ring-amber-400/30 tabular-nums">
+            {ko.trivia.yourScore(score)}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -354,9 +377,11 @@ function ProgressBar({ remainingMs, totalMs }: { remainingMs: number; totalMs: n
 }
 
 function PreView({
+  emoji,
   secondsToStart,
   totalQuestions,
 }: {
+  emoji: string;
   secondsToStart: number;
   totalQuestions: number;
 }) {
@@ -369,7 +394,7 @@ function PreView({
       key={secondsToStart}
       className="flex-1 flex flex-col items-center justify-center gap-3 text-center"
     >
-      <div className="text-5xl">🧠</div>
+      <div className="text-5xl">{emoji}</div>
       <div className="text-lg font-black text-zinc-100 tracking-tight">
         {ko.trivia.startingTitle}
       </div>
@@ -432,11 +457,13 @@ function QuestionView({
   onPick: (qIndex: number, choice: 0 | 1 | 2 | 3) => void;
 }) {
   return (
-    <div className="flex flex-col">
+    // 답변 중에는 보기 4개가 남은 높이를 균등 분할한다(보기당 ~90px) — 급하게 눌러도
+    // 안 틀리는 크기. 정답 공개로 넘어가면 순위표 자리를 내주고 다시 압축된다.
+    <div className={clsx('flex flex-col', !revealing && 'flex-1 min-h-0')}>
       <div
         className={clsx(
-          'rounded-2xl bg-zinc-900/80 ring-1 ring-zinc-800 transition-all',
-          revealing ? 'px-3.5 py-2.5 mb-2.5' : 'px-4 py-5 mb-4',
+          'shrink-0 rounded-2xl bg-zinc-900/80 ring-1 ring-zinc-800 transition-all',
+          revealing ? 'px-3.5 py-2.5 mb-2.5' : 'px-4 py-5 mb-3',
         )}
       >
         <div className="text-[11px] font-black uppercase tracking-[0.2em] text-amber-400/80">
@@ -445,14 +472,19 @@ function QuestionView({
         <div
           className={clsx(
             'mt-1 font-bold leading-snug transition-all',
-            revealing ? 'text-[14px] text-zinc-300' : 'text-lg text-zinc-100',
+            revealing ? 'text-[14px] text-zinc-300' : 'text-[21px] text-zinc-100',
           )}
         >
           {question.question}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 transition-all">
+      <div
+        className={clsx(
+          'grid gap-2 transition-all',
+          revealing ? 'grid-cols-1' : 'flex-1 min-h-0 grid-rows-4',
+        )}
+      >
         {question.choices.map((label, i) => {
           const idx = i as 0 | 1 | 2 | 3;
           const picked = myPick === idx;
@@ -470,13 +502,13 @@ function QuestionView({
               disabled={disabled}
               className={clsx(
                 'relative flex items-center gap-3 rounded-2xl border-[1.5px] text-left transition-all',
-                revealing ? 'min-h-[42px] px-3 py-2' : 'min-h-[64px] px-4 py-4',
+                revealing ? 'min-h-[42px] px-3 py-2' : 'h-full min-h-[76px] px-4 py-3',
                 showCorrect &&
                   'border-emerald-400 bg-emerald-500/20 text-emerald-50 ring-2 ring-emerald-400/60 scale-[1.015]',
                 showWrong &&
                   'border-rose-500 bg-rose-500/15 text-rose-100 ring-1 ring-rose-500/50',
                 !showCorrect && !showWrong && picked && 'border-amber-400 bg-amber-400/15 text-amber-100',
-                !showCorrect && !showWrong && !picked && CHOICE_BG[i],
+                !showCorrect && !showWrong && !picked && CHOICE_NEUTRAL,
                 dim && 'opacity-30',
                 !disabled && 'active:scale-[0.98]',
               )}
@@ -499,7 +531,7 @@ function QuestionView({
               <span
                 className={clsx(
                   'font-bold leading-snug flex-1 transition-all',
-                  revealing ? 'text-[13px]' : 'text-[15px]',
+                  revealing ? 'text-[13px]' : 'text-[16px]',
                 )}
               >
                 {label}
