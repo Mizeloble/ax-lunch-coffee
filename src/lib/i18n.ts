@@ -79,7 +79,6 @@ export const ko = {
   },
   lobby: {
     waiting: '참가자를 기다리는 중',
-    waitingHostPicking: '호스트가 게임을 고르는 중이에요. 같이 기다려요.',
     rosterSomeOffline: '일부 재접속 대기',
     rosterCount: (n: number) => `참가자 ${n}명`,
     // 방 코드는 술자리에서 제일 자주 소리내어 묻는 값 — 헤더에서 크게.
@@ -175,7 +174,6 @@ export const ko = {
     losers: (n: number) => `오늘 벌칙은 ${n}명!`,
     headerChip: '오늘의 벌칙',
     countBadge: (n: number) => `× ${n}명`,
-    loserBadge: '패자',
     // 기울어진 스탬프 — 단톡방 캡처에서 "누가 걸렸나"가 1초에 읽히게.
     stamp: '벌칙 당첨',
     // 패자 사유는 게임마다 다르다 — 고정 문구를 쓰면 퀴즈에서 거짓말이 된다.
@@ -189,9 +187,11 @@ export const ko = {
     // 색만으로 구분하지 않기 — 색약 사용자 + 저화질 캡처 대응.
     rowLoser: '✕ 벌칙',
     rowSafe: '✓ 면제',
-    // 퀴즈 지표 한 줄 — 결과 화면과 공유 카드가 같은 문구를 쓴다.
+    // 게임별 지표 한 줄 — 결과 화면과 공유 카드가 같은 문구를 쓴다.
+    // 퀴즈=정답 수·점수, 반응속도=ms(formatReactionOffset 재사용), 마블="N명 중 꼴찌".
     quizMetric: (correct: number, total: number, score: number) =>
       `${total}문제 중 ${correct}개 정답 · ${score.toLocaleString()}점`,
+    marbleMetric: (total: number) => `${total}명 중 꼴찌`,
     rankingSub: (game: string) => game,
     again: '다시 하기',
     changeGame: '게임 바꾸기',

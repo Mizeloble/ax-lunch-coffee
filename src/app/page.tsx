@@ -194,7 +194,7 @@ export default function LandingPage() {
                   if (e.key === 'Enter') joinByCode();
                 }}
                 placeholder={ko.landing.joinByCodePlaceholder}
-                aria-label={ko.landing.joinByCodeTitle}
+                aria-label={ko.landing.joinByCodePlaceholder}
                 className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 font-mono text-base tracking-[0.2em] uppercase placeholder:tracking-normal placeholder:font-sans focus:border-amber-400 focus:outline-none"
               />
               <button

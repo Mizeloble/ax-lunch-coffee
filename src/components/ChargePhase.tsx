@@ -181,7 +181,8 @@ export function ChargePhase() {
         {players.length > 1 && (
           <div className="space-y-1.5">
             <div className="text-xs text-zinc-500">{ko.charge.everyoneTitle}</div>
-            <ul className="space-y-1">
+            {/* max-h: 30명 방에서도 탭 존(주 행동)을 밀어내지 않게 목록만 스크롤. */}
+            <ul className="max-h-36 space-y-1 overflow-y-auto">
               {players.map((p) => {
                 const isMe = p.playerToken === myToken;
                 // manual(폰 없는) 참가자는 서버가 고정값으로 채운다 — 탭 수가 올 리 없다.

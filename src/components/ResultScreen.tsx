@@ -91,6 +91,19 @@ export function ResultScreen({
     return ko.result.quizMetric(correct, triviaQuestions.length, triviaFinalScores[tk] ?? 0);
   };
 
+  // 공유 카드 지표 — 4b 규칙 그대로 게임별로 갈린다(검토 문서 5a). 퀴즈는 위 계산,
+  // 반응속도는 결과 화면과 같은 formatReactionOffset, 마블 계열은 "N명 중 꼴찌".
+  const cardMetricFor = (tk: string): string | null => {
+    const cat = gameCategory(state.gameId);
+    if (cat === 'quiz') return quizMetricFor(tk);
+    if (cat === 'reaction') {
+      const label = reactionOffsets ? formatReactionOffset(reactionOffsets[tk]) : null;
+      return label ? label.text : null;
+    }
+    // marble · live-marble — 등수 외 지표가 없으니 판의 크기가 곧 맥락.
+    return ko.result.marbleMetric(state.players.length);
+  };
+
   function leaveRoom() {
     router.push('/');
   }
@@ -174,7 +187,7 @@ export function ResultScreen({
               state.players.length,
             )}
             reasonBadge={ko.result.loserReasonBadge(loserReason)}
-            metric={losers.length === 1 ? quizMetricFor(losers[0].playerToken) : null}
+            metric={losers.length === 1 ? cardMetricFor(losers[0].playerToken) : null}
             winner={fullRanking[0] ? ko.share.cardWinner(fullRanking[0].nickname) : null}
           />
           {inviteUrl && (
