@@ -25,6 +25,16 @@ export function SiteFooter() {
         >
           {ko.legal.terms}
         </Link>
+        <span aria-hidden>·</span>
+        {/* 오픈소스 배지는 히어로에서 내려온 자리 — 신뢰 신호는 푸터에서 충분하다. */}
+        <a
+          href={ko.credit.repoUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="underline-offset-2 hover:underline hover:text-zinc-400"
+        >
+          {ko.landing.openSourceShort}
+        </a>
         {FEEDBACK_URL ? (
           <>
             <span aria-hidden>·</span>

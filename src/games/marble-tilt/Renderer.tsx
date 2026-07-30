@@ -77,6 +77,12 @@ export function MarbleTiltRenderer({ startAt, intro, players, myPlayerToken }: M
   // the button's enabled/disabled state.
   const [boostBudget, setBoostBudget] = useState(BOOST_BUDGET_MAX);
   const [boostCooldownAt, setBoostCooldownAt] = useState(0);
+  // 쿨다운 남은 시간을 숫자로 보여주기 위한 100ms 틱. 쿨다운 중에만 돈다.
+  const [cooldownRemainMs, setCooldownRemainMs] = useState(0);
+  // "지금 꼴찌 후보" — 실시간 게임에서 유일한 긴장 장치다. 캔버스 pane 라벨로만
+  // 그리면 트랙에 묻혀서, DOM 헤더로 올린다. 드로우 루프에서 값이 바뀔 때만 갱신.
+  const [riskCandidate, setRiskCandidate] = useState(false);
+  const riskRef = useRef(false);
   // Reset budget on round restart (key changes via startAt).
   useEffect(() => {
     setBoostBudget(BOOST_BUDGET_MAX);
@@ -94,6 +100,16 @@ export function MarbleTiltRenderer({ startAt, intro, players, myPlayerToken }: M
     }
     const t = setTimeout(() => setBoostCooldownAt(0), remaining);
     return () => clearTimeout(t);
+  }, [boostCooldownAt]);
+  useEffect(() => {
+    if (boostCooldownAt === 0) {
+      setCooldownRemainMs(0);
+      return;
+    }
+    const tick = () => setCooldownRemainMs(Math.max(0, boostCooldownAt - Date.now()));
+    tick();
+    const id = setInterval(tick, 100);
+    return () => clearInterval(id);
   }, [boostCooldownAt]);
 
   // Tilt input. Hook lives at the top of the component so it persists across the
@@ -431,6 +447,12 @@ export function MarbleTiltRenderer({ startAt, intro, players, myPlayerToken }: M
           ? ko.marble.paneRiskCandidate
           : ko.marble.paneMyView;
 
+      // 캔버스 라벨과 같은 판정을 DOM 헤더로도 올린다 — 값이 바뀔 때만 setState.
+      if (riskRef.current !== iAmLoserCandidate) {
+        riskRef.current = iAmLoserCandidate;
+        setRiskCandidate(iAmLoserCandidate);
+      }
+
       const mainShakeX = mainPane.shake > 0 ? (Math.random() - 0.5) * mainPane.shake * 8 * dpr : 0;
       const mainShakeY = mainPane.shake > 0 ? (Math.random() - 0.5) * mainPane.shake * 8 * dpr : 0;
       ctx.save();
@@ -544,7 +566,8 @@ export function MarbleTiltRenderer({ startAt, intro, players, myPlayerToken }: M
 
   const myIdxState = myPlayerToken ? intro.playerOrder.indexOf(myPlayerToken) : -1;
   const showBoostButton = myIdxState >= 0;
-  const boostDisabled = boostBudget <= 0 || Date.now() < boostCooldownAt;
+  const cooling = cooldownRemainMs > 0;
+  const boostDisabled = boostBudget <= 0 || cooling;
 
   return (
     <div ref={wrapperRef} className="absolute inset-0 bg-zinc-950">
@@ -553,21 +576,42 @@ export function MarbleTiltRenderer({ startAt, intro, players, myPlayerToken }: M
           permission state without leaving the race screen. */}
       <PermissionPip />
 
-      {showBoostButton && (
-        <button
-          type="button"
-          onClick={triggerBoost}
-          disabled={boostDisabled}
-          aria-label={ko.marbleTilt.boostLabel}
-          className="absolute right-4 bottom-20 select-none rounded-full border-2 border-amber-200/80 bg-amber-400 text-zinc-950 font-extrabold shadow-2xl shadow-amber-500/40 active:scale-95 transition-transform disabled:opacity-35 disabled:scale-95"
-          style={{ width: 92, height: 92 }}
-        >
-          <div className="flex flex-col items-center justify-center leading-tight">
-            <span className="text-[28px]">⚡</span>
-            <span className="text-[12px] tracking-wider">{ko.marbleTilt.boostLabel}</span>
-            <span className="text-[11px] mt-0.5">× {boostBudget}</span>
+      {/* 꼴찌 후보 경고 — 실시간 게임의 유일한 긴장 장치라 상단 고정. */}
+      {riskCandidate && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center pt-[max(env(safe-area-inset-top),10px)]">
+          <div className="rounded-full bg-red-600/95 px-4 py-2 text-[14px] font-black text-white shadow-2xl ring-1 ring-red-300/40">
+            {ko.marble.paneRiskCandidate}
           </div>
-        </button>
+        </div>
+      )}
+
+      {showBoostButton && (
+        <div className="absolute right-4 bottom-20 flex flex-col items-center gap-1.5">
+          <button
+            type="button"
+            onClick={triggerBoost}
+            disabled={boostDisabled}
+            aria-label={ko.marbleTilt.boostLabel}
+            className="select-none rounded-full border-2 border-amber-200/80 bg-amber-400 text-zinc-950 font-extrabold shadow-2xl shadow-amber-500/40 active:scale-95 transition-transform disabled:opacity-35 disabled:scale-95"
+            style={{ width: 92, height: 92 }}
+          >
+            <div className="flex flex-col items-center justify-center leading-tight">
+              <span className="text-[28px]">⚡</span>
+              <span className="text-[12px] tracking-wider">{ko.marbleTilt.boostLabel}</span>
+            </div>
+          </button>
+          {/* 서버가 강제하는 3발 한정·800ms 쿨다운을 그대로 보여준다 — "언제 쓸지"가
+              이 게임의 유일한 판단인데 지금까지 그 정보가 감춰져 있었다. */}
+          <div className="rounded-full bg-zinc-950/80 px-2.5 py-1 text-center text-[11px] font-bold tabular-nums text-amber-200 ring-1 ring-amber-400/30">
+            {ko.marbleTilt.boostRemaining(boostBudget, BOOST_BUDGET_MAX)}
+          </div>
+          {cooling && (
+            <div className="rounded-full bg-zinc-950/80 px-2.5 py-1 text-center text-[11px] font-bold tabular-nums text-zinc-400 ring-1 ring-white/10">
+              {ko.marbleTilt.boostCooldownLabel}{' '}
+              {ko.marbleTilt.boostCooldown((cooldownRemainMs / 1000).toFixed(1))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

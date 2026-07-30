@@ -402,6 +402,7 @@ export default function RoomClient({
         <div className="fixed inset-0 z-20">
           <TriviaRenderer
             key={effectiveStartAt}
+            gameId={gameStart.gameId}
             startAt={effectiveStartAt}
             durationMs={gameStart.durationMs}
             replay={gameStart.replay as TriviaReplayData}

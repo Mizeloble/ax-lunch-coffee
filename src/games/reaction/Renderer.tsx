@@ -204,25 +204,28 @@ export function ReactionRenderer({
 }
 
 function ReadyView({ progress }: { progress: number }) {
+  // 노랑 = 탭해도 되는 순간, 빨강 = 아직·위반. "준비…"는 눌러도 되는 것처럼 읽혀서
+  // 신호등 규칙이 성립하지 않았다 — 이 화면은 전부 빨강 쪽이다.
   return (
     <>
       <div className="text-xs uppercase tracking-[0.18em] text-amber-400/80 font-bold">
         {ko.reaction.readySub}
       </div>
       <div
-        className="mt-3 font-black text-zinc-100 leading-none"
+        className="mt-3 font-black text-red-500 leading-none"
         style={{ fontSize: 80, letterSpacing: '-0.06em' }}
       >
         {ko.reaction.ready}
       </div>
+      <p className="mt-3 px-6 text-[15px] font-bold text-red-300/90">{ko.reaction.readyRule}</p>
       {/* Progress hint — anti-cheat: not the actual remaining ms, just an opaque bar */}
-      <div className="mt-10 h-1.5 w-44 overflow-hidden rounded-full bg-zinc-800">
+      <div className="mt-8 h-1.5 w-44 overflow-hidden rounded-full bg-zinc-800">
         <div
-          className="h-full bg-zinc-600 transition-[width] duration-100"
+          className="h-full bg-red-500/70 transition-[width] duration-100"
           style={{ width: `${Math.min(100, progress * 100)}%` }}
         />
       </div>
-      <p className="mt-6 text-xs text-zinc-500">{ko.reaction.tapHint}</p>
+      <p className="mt-6 text-[13px] text-zinc-500">{ko.reaction.tapHint}</p>
     </>
   );
 }

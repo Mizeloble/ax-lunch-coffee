@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
+import { ROOM } from '@/lib/constants';
+import { GAME_META } from '@/games/types';
 import { useRoomStore } from '@/store/room-store';
 import { GamePicker } from './GamePicker';
 import { GameIntro } from './GameIntro';
@@ -19,6 +22,7 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
   const state = useRoomStore((s) => s.state);
   const isHost = useRoomStore((s) => s.isHost);
   const myToken = useRoomStore((s) => s.myToken);
+  const router = useRouter();
   const [showInvite, setShowInvite] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [manualValue, setManualValue] = useState('');
@@ -44,6 +48,10 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
   const connectedCount = state.players.filter((p) => p.connected).length;
   const someOffline = state.players.some((p) => !p.connected);
   const canStart = isHost && connectedCount >= 2;
+  const hostPlayer = state.players.find((p) => p.playerToken === state.hostPlayerToken);
+  // 재접속 유예 안내는 실제로 끊긴 사람이 있을 때만 — 유예 시간은 서버 상수와 같은 출처.
+  const offlinePlayer = state.players.find((p) => !p.connected);
+  const reconnectGraceSec = Math.round(ROOM.RECONNECT_GRACE_MS / 1000);
   const canManageRoster = isHost && (state.status === 'lobby' || state.status === 'result');
   // 실제 폰으로 들어온 참가자(비-manual)가 호스트뿐이면 초대가 다음 행동 —
   // 인라인 QR 카드를 게임 선택보다 먼저 보여준다(랜딩 1단계 약속과 일치).
@@ -93,23 +101,23 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
 
   return (
     <main className="min-h-dvh flex flex-col">
-      {/* top bar — 브랜드 로고 + 방 코드(또렷하게) · 우측 초대 버튼 */}
-      <header className="px-4 pt-4 pb-2 flex items-center justify-between gap-3">
+      {/* top bar — 방 코드가 주인공. 술자리에서 제일 자주 소리내어 묻는 값이라
+          12px 모노에서 헤더 크기로 올렸다. 우측은 초대 버튼. */}
+      <header className="px-4 pt-4 pb-2 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 flex items-center gap-2.5">
           <Logo size={30} className="shrink-0" />
           <div className="min-w-0">
-            <div className="font-bold text-base truncate -tracking-wide leading-tight">
-              {ko.app.title}
-            </div>
-            <div className="text-zinc-500 text-xs mt-0.5 flex items-center gap-1">
-              <span>{ko.lobby.roomLabel}</span>
-              <span className="font-mono tracking-wider text-zinc-300">{state.id}</span>
+            <div className="text-zinc-500 text-[12px] font-semibold flex items-center gap-1">
+              <span>{ko.lobby.roomCodeLabel}</span>
               {isHost && (
                 <>
                   <span aria-hidden>·</span>
                   <span>{ko.lobby.hostTag}</span>
                 </>
               )}
+            </div>
+            <div className="font-mono text-[26px] font-extrabold tracking-[0.14em] text-amber-300 leading-tight">
+              {state.id}
             </div>
           </div>
         </div>
@@ -129,9 +137,9 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
         </button>
       </header>
 
-      {/* nickname badge */}
+      {/* nickname + 내 연결 상태 — 서버는 이미 connected를 뿌리는데 UI엔 없었다. */}
       {me && (
-        <div className="px-4 pt-1 text-xs text-zinc-400 flex items-center gap-1.5">
+        <div className="px-4 pt-1 text-[13px] text-zinc-400 flex flex-wrap items-center gap-x-2 gap-y-1">
           <span>{ko.lobby.nicknameBadge(me.nickname)}</span>
           <button
             type="button"
@@ -140,10 +148,11 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
           >
             {ko.lobby.changeNickname}
           </button>
+          <ConnectionChip connected={me.connected} />
         </div>
       )}
 
-      <section className="px-4 mt-5 space-y-5 flex-1 overflow-auto pb-32">
+      <section className="px-4 mt-5 space-y-5 flex-1 overflow-auto pb-40">
         {promotedNotice && (
           <div
             role="status"
@@ -155,58 +164,32 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
         {/* 혼자인 호스트: 초대 QR을 게임 선택보다 먼저 — 다음 행동을 화면이 알려준다 */}
         {needsInvite && <InviteCard url={inviteUrl} />}
 
-        {/* host controls first */}
-        {isHost ? (
-          <>
-            <div className="space-y-2">
-              <Eyebrow>{ko.lobby.chooseGame}</Eyebrow>
-              <GamePicker selected={state.gameId} onSelect={setGameId} />
-              <GameIntro gameId={state.gameId} />
-              {isLiveGame(state.gameId) && <TiltPermissionGate isHost />}
+        {/* 게스트는 "지금 뭘 기다리는지"가 첫 정보 — 폰을 계속 볼 필요가 없다고 말해준다. */}
+        {!isHost && (
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.07] px-4 py-3.5">
+            <div className="text-[13px] font-extrabold uppercase tracking-[0.12em] text-amber-300">
+              {ko.lobby.guestHostTurn}
             </div>
-
-            <div>
-              <Eyebrow>{ko.lobby.loserCount}</Eyebrow>
-              <div className="flex gap-2">
-                {[1, 2, 3].map((n) => {
-                  const isSelected = state.loserCount === n;
-                  return (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setLoserCount(n)}
-                      className={clsx(
-                        'flex-1 py-3.5 rounded-xl font-bold text-[15px] border-[1.5px] transition-all',
-                        isSelected
-                          ? 'border-amber-500/70 bg-amber-500/10 text-amber-200 shadow-[0_8px_24px_-12px_rgba(251,191,36,0.5)]'
-                          : 'border-white/10 bg-white/[0.04] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
-                      )}
-                    >
-                      {ko.lobby.loserCountUnit(n)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="space-y-2">
-            <div className="rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3 text-sm text-zinc-300">
-              {ko.lobby.waitingHostPicking}
-            </div>
-            <GameIntro gameId={state.gameId} />
-            {isLiveGame(state.gameId) && <TiltPermissionGate isHost={false} />}
+            <p className="mt-1 text-[15px] font-bold text-zinc-100">
+              {hostPlayer
+                ? ko.lobby.guestHostPicking(hostPlayer.nickname)
+                : ko.lobby.guestHostPickingNoName}
+            </p>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">
+              {ko.lobby.guestAutoAdvance}
+            </p>
           </div>
         )}
 
-        {/* participants */}
+        {/* participants — 호스트가 로비에서 계속 보는 건 "몇 명 들어왔나"다. 게임 목록보다 먼저. */}
         <div>
-          <div className="text-xs text-zinc-400 mb-2 font-bold uppercase tracking-[0.05em] flex justify-between items-center">
-            <span>{ko.lobby.rosterCount(connectedCount)}</span>
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <h2 className="text-[15px] font-bold text-zinc-100">
+              {ko.lobby.rosterTitle}{' '}
+              <span className="text-amber-300 tabular-nums">{connectedCount}</span>
+            </h2>
             {someOffline && (
-              <span className="text-zinc-600 normal-case tracking-normal font-normal">
-                {ko.lobby.rosterSomeOffline}
-              </span>
+              <span className="text-[13px] text-zinc-500">{ko.lobby.rosterSomeOffline}</span>
             )}
           </div>
 
@@ -218,10 +201,10 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
                 <li
                   key={p.playerToken}
                   className={clsx(
-                    'rounded-xl px-3 py-2.5 text-sm flex items-center gap-2 border list-none',
+                    'rounded-xl px-3 py-2.5 text-[15px] flex items-center gap-2 border list-none',
                     p.connected
                       ? 'bg-zinc-900 border-zinc-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
-                      : 'bg-zinc-900/40 border-zinc-800/50 opacity-55',
+                      : 'bg-zinc-900/40 border-dashed border-red-500/40',
                   )}
                 >
                   <span
@@ -229,10 +212,17 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
                     className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
                     style={{ background: p.color, boxShadow: `0 0 0 2px ${p.color}33` }}
                   />
-                  <span className="truncate flex-1 min-w-0">{p.nickname}</span>
+                  <span className={clsx('truncate flex-1 min-w-0', !p.connected && 'text-zinc-500')}>
+                    {p.nickname}
+                  </span>
                   {isMe && (
                     <span className="text-[11px] font-bold text-amber-200 bg-amber-200/10 px-1.5 py-0.5 rounded">
                       {ko.lobby.meBadge}
+                    </span>
+                  )}
+                  {!p.connected && (
+                    <span className="shrink-0 rounded bg-red-500/15 px-1.5 py-0.5 text-[11px] font-bold text-red-300">
+                      {ko.lobby.disconnected}
                     </span>
                   )}
                   {showRemove && (
@@ -249,15 +239,15 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
               );
             })}
 
-            {/* dashed inline "+ 직접 추가" — host-only */}
+            {/* dashed inline "+ 폰 없는 사람" — host-only */}
             {canManageRoster && !showManual && (
               <li className="list-none">
                 <button
                   type="button"
                   onClick={() => setShowManual(true)}
-                  className="w-full rounded-xl px-3 py-2.5 text-[13px] text-zinc-400 border border-dashed border-zinc-700 flex items-center justify-center gap-1.5 hover:text-zinc-200 hover:border-zinc-600 active:scale-[0.98]"
+                  className="w-full h-full rounded-xl px-3 py-2.5 text-[13px] text-zinc-400 border border-dashed border-zinc-700 flex items-center justify-center gap-1.5 hover:text-zinc-200 hover:border-zinc-600 active:scale-[0.98]"
                 >
-                  + {ko.lobby.addManualTitle}
+                  + {ko.lobby.addManualShort}
                 </button>
               </li>
             )}
@@ -266,6 +256,13 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
               <li className="col-span-2 text-zinc-500 text-sm">{ko.lobby.waiting}…</li>
             )}
           </ul>
+
+          {/* 끊긴 사람이 있으면 RECONNECT_GRACE_MS 유예를 문구로 — 목록에서 사라질까 봐 불안해진다. */}
+          {offlinePlayer && (
+            <p className="mt-2 text-[13px] leading-relaxed text-zinc-500">
+              {ko.lobby.reconnectGrace(offlinePlayer.nickname, reconnectGraceSec)}
+            </p>
+          )}
 
           {/* manual-add input (host) — expanded form */}
           {canManageRoster && showManual && (
@@ -319,16 +316,92 @@ export function Lobby({ inviteUrl, onChangeNickname }: { inviteUrl: string; onCh
           )}
         </div>
 
-        {/* 대기 시간 광고 — 참가자 목록 아래, 스티키 시작 버튼과 겹치지 않게 스크롤 영역 안 */}
+        {/* 게임 선택 — 호스트만. 게스트는 규칙만 읽는다. */}
+        {isHost ? (
+          <>
+            <div className="space-y-2.5">
+              <h2 className="text-[15px] font-bold text-zinc-100">{ko.lobby.pickerTitle}</h2>
+              <GamePicker selected={state.gameId} onSelect={setGameId} />
+              {isLiveGame(state.gameId) && <TiltPermissionGate isHost />}
+            </div>
+
+            {/* 벌칙 인원은 게임보다 자주 바꾸는 값 — 시작 버튼 바로 위로. 선택 상태는
+                빨강(=벌칙)이라 게임 선택(앰버)과 색으로 갈린다. */}
+            <div className="space-y-2.5">
+              <h2 className="text-[15px] font-bold text-zinc-100">{ko.lobby.loserCountTitle}</h2>
+              <div className="flex gap-2">
+                {[1, 2, 3].map((n) => {
+                  const isSelected = state.loserCount === n;
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setLoserCount(n)}
+                      aria-pressed={isSelected}
+                      className={clsx(
+                        'flex-1 py-3.5 rounded-xl font-bold text-[15px] border-[1.5px] transition-all',
+                        isSelected
+                          ? 'border-red-500/70 bg-red-500/10 text-red-200 shadow-[0_8px_24px_-12px_rgba(239,68,68,0.5)]'
+                          : 'border-white/10 bg-white/[0.04] text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
+                      )}
+                    >
+                      {ko.lobby.loserCountUnit(n)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2.5">
+            <GameIntro gameId={state.gameId} />
+            {isLiveGame(state.gameId) && <TiltPermissionGate isHost={false} />}
+            <div className="flex items-center justify-center gap-2 pt-1 text-[13px] text-zinc-500">
+              <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+              <span>{ko.lobby.guestWaitingStart}</span>
+            </div>
+          </div>
+        )}
+
+        {/* 대기 시간 광고 — 액션(시작 버튼·게스트 하단 버튼)에서 떨어뜨려 오탭을 막는다 */}
         <AdSlot placement="lobby" width={320} height={50} className="mt-2" />
+
+        {/* 게스트 하단 액션 — 호스트의 스티키 CTA 자리를 대신한다. */}
+        {!isHost && (
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowInvite(true)}
+              className="rounded-xl border-[1.5px] border-zinc-800 py-3.5 text-[14px] font-semibold text-zinc-300 active:scale-[0.98]"
+            >
+              {ko.lobby.inviteFriendsShort}
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/')}
+              className="rounded-xl border-[1.5px] border-zinc-800 py-3.5 text-[14px] font-semibold text-zinc-400 active:scale-[0.98]"
+            >
+              {ko.lobby.leaveRoom}
+            </button>
+          </div>
+        )}
       </section>
 
-      {/* sticky bottom CTA (host only) */}
+      {/* sticky bottom CTA (host only) — 버튼에 게임 이름, 아래 한 줄에 조건 요약 */}
       {isHost && (
         <div className="fixed bottom-0 left-0 right-0 px-4 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 bg-gradient-to-t from-[#0b0b10] via-[#0b0b10]/95 to-transparent">
           <button type="button" disabled={!canStart} onClick={start} className="btn-primary">
-            {canStart ? ko.lobby.start : ko.lobby.needMorePlayers}
+            {canStart ? ko.lobby.startWithGame(ko.games[state.gameId]) : ko.lobby.needMorePlayers}
           </button>
+          {canStart && (
+            <p className="mt-1.5 text-center text-[13px] text-zinc-500">
+              {ko.lobby.startSummary(
+                connectedCount,
+                GAME_META[state.gameId].estimatedSeconds,
+                state.loserCount,
+              )}
+            </p>
+          )}
         </div>
       )}
 
@@ -368,10 +441,23 @@ function InviteCard({ url }: { url: string }) {
   );
 }
 
-function Eyebrow({ children }: { children: React.ReactNode }) {
+/** 내 연결 상태 한 눈에 — 서버의 `connected`가 진실이라 낙관적 표시를 하지 않는다. */
+function ConnectionChip({ connected }: { connected: boolean }) {
   return (
-    <div className="text-xs text-zinc-400 mb-2 font-bold uppercase tracking-[0.05em]">
-      {children}
-    </div>
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] font-semibold',
+        connected ? 'bg-emerald-400/10 text-emerald-300' : 'bg-red-500/15 text-red-300',
+      )}
+    >
+      <span
+        aria-hidden
+        className={clsx(
+          'h-1.5 w-1.5 rounded-full',
+          connected ? 'bg-emerald-400' : 'bg-red-400 animate-pulse',
+        )}
+      />
+      {connected ? ko.lobby.connected : ko.lobby.disconnected}
+    </span>
   );
 }
