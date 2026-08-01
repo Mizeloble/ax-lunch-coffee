@@ -108,6 +108,13 @@ export type RoomState = {
   reaction?: ReactionState; // present only during a `reaction` round (countdown + playing)
   trivia?: TriviaState; // present only during a `trivia` round (countdown + playing)
   marbleTilt?: MarbleTiltState; // present only during a `marble-tilt` round
+  /**
+   * Monotonic counter bumped at the start of every round. Round runners capture
+   * it before their async init (WASM load) and re-check after: if it moved, a
+   * newer round started during the await (reset → start) and the stale runner
+   * must dispose its sim instead of overwriting the new round's state.
+   */
+  roundEpoch: number;
   lastActivityAt: number;
   cleanupTimer?: NodeJS.Timeout;
 };
@@ -171,6 +178,7 @@ export function createRoom(): { roomId: string; hostToken: string } {
     gameId: 'marble',
     loserCount: 1,
     players: new Map(),
+    roundEpoch: 0,
     lastActivityAt: Date.now(),
   };
   rooms.set(id, room);
@@ -220,6 +228,13 @@ export function deleteRoom(roomId: string) {
   for (const p of r.players.values()) {
     if (p.graceTimer) clearTimeout(p.graceTimer);
   }
+  // A room can be deleted mid-round (everyone closes their tab → grace expiry).
+  // Without these, the marble-tilt Box2D runner keeps stepping for up to 60s and
+  // round finish timers fire against a deleted room.
+  clearCharge(r);
+  clearReaction(r);
+  clearTrivia(r);
+  clearMarbleTilt(r);
   rooms.delete(roomId);
 }
 
@@ -360,6 +375,9 @@ export function publicRoomState(room: RoomState) {
     // leaves flips the new host's controls on via the normal state broadcast.
     hostPlayerToken: room.hostPlayerToken,
     players: snapshotPlayers(room),
+    // Mid-charge reconnects: `charge:start` fires once at phase start, so the
+    // endsAt must also travel with state for clients that joined the room after.
+    chargeEndsAt: room.status === 'charging' ? room.charge?.endsAt : undefined,
     currentRound: room.currentRound
       ? {
           gameId: room.currentRound.gameId,
@@ -367,7 +385,11 @@ export function publicRoomState(room: RoomState) {
           durationMs: room.currentRound.replay.durationMs,
           // Exposed for mid-play reconnects (reaction needs goAt/deadlineAt to render).
           // For marble, `data` is large frame data — only include intro-only payloads.
-          replay: exposesReplayData(room.gameId) ? room.currentRound.replay.data : undefined,
+          // Gate on the round's own gameId, not room.gameId: the host can switch
+          // games on the result screen, which must not start leaking marble frames.
+          replay: exposesReplayData(room.currentRound.gameId)
+            ? room.currentRound.replay.data
+            : undefined,
           // Result recovery: a client that was off the room route when `game:result`
           // fired (browser back during the round) rebuilds the result from state alone.
           ranking: room.status === 'result' ? room.currentRound.replay.ranking : undefined,

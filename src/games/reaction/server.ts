@@ -1,7 +1,7 @@
 import type { ReplayPayload } from '../../server/rooms';
 import type { ComputeResultInput, GameIntroTimings, GameServerModule } from '../types';
 import { GAME } from '../../lib/constants';
-import { mulberry32 } from '../../lib/rng';
+import { mulberry32, seededTieRank } from '../../lib/rng';
 
 /**
  * Intro data baked into `replay.data` so clients (incl. mid-play reconnects)
@@ -46,7 +46,7 @@ type Entry = {
  * Within `tap`: ascending offset (faster = better).
  * Within `falseStart`: descending negative-ness — i.e. the *earliest* false-starter
  *   is the worst. This makes early flinches the worst possible outcome.
- * Within `noTap` (incl. manual): playerToken alphabetical for deterministic tiebreak.
+ * Within `noTap` (incl. manual): seed-shuffled order for deterministic tiebreak.
  */
 function classify(token: string, offset: number | null | undefined): Entry {
   if (offset == null) {
@@ -70,12 +70,17 @@ export const reactionServer: GameServerModule = {
       return classify(p.playerToken, offset);
     });
 
+    // Full ties (same bucket + sortKey — in practice the noTap bucket, where
+    // manual players always land) fall through to a seed-shuffled order, not
+    // token order: token order is fixed per room, which would make the same
+    // person lose every round.
+    const tieRank = seededTieRank(seed, players.map((p) => p.playerToken));
     entries.sort((a, b) => {
       const ba = BUCKET_RANK[a.bucket];
       const bb = BUCKET_RANK[b.bucket];
       if (ba !== bb) return ba - bb;
       if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
-      return a.token < b.token ? -1 : a.token > b.token ? 1 : 0;
+      return (tieRank.get(a.token) ?? 0) - (tieRank.get(b.token) ?? 0);
     });
 
     const ranking = entries.map((e) => e.token);

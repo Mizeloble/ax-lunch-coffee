@@ -376,6 +376,7 @@ export const ko = {
     paneMyView: '👁 내 시점',
     loserExclamation: '🎯 꼴찌!',
     loserConfirmedBadge: '꼴찌 결정!',
+    finishLine: 'FINISH',
   },
   marbleTilt: {
     permEnable: '기울임 조작 활성화',

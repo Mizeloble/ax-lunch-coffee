@@ -18,20 +18,25 @@ export function drawLeaderboard(
   playerByToken: Map<string, PlayerInfo>,
   myPlayerToken: string | null,
 ) {
-  // Compose ranks: finished marbles by their finish frame ASC, then active by current y DESC
+  // Compose ranks: finished marbles in the server's finishOrder, then active by
+  // current y DESC. Re-deriving finished ranks from finishFrame would disagree
+  // with the server on same-frame finishes (it tie-breaks by depth + seeded rng),
+  // so the authoritative order is replayed as-is — never recomputed.
   type Row = { token: string; rank: number; finished: boolean };
   const rows: Row[] = [];
-  const finishers: { token: string; finishFrame: number }[] = [];
+  const finishRank = new Map(replay.finishOrder.map((tk, i) => [tk, i]));
+  const finishers: { token: string; rank: number }[] = [];
   const active: { token: string; y: number }[] = [];
   for (let i = 0; i < replay.playerOrder.length; i++) {
     const f = replay.finishFrames[i];
     if (f >= 0 && f <= curFrame) {
-      finishers.push({ token: replay.playerOrder[i], finishFrame: f });
+      const token = replay.playerOrder[i];
+      finishers.push({ token, rank: finishRank.get(token) ?? 0 });
     } else {
       active.push({ token: replay.playerOrder[i], y: cur[i * 2 + 1] });
     }
   }
-  finishers.sort((a, b) => a.finishFrame - b.finishFrame);
+  finishers.sort((a, b) => a.rank - b.rank);
   active.sort((a, b) => b.y - a.y);
   for (const f of finishers) rows.push({ token: f.token, rank: rows.length + 1, finished: true });
   for (const a of active) rows.push({ token: a.token, rank: rows.length + 1, finished: false });

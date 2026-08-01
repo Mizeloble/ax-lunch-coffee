@@ -2,7 +2,7 @@ import { clearReaction, getRoom, publicRoomState, touch, type RoomState } from '
 import { prepareGameIntro, runGame } from '../game-runner';
 import { GAME } from '../../lib/constants';
 import { mulberry32 } from '../../lib/rng';
-import { emitResult, type IO } from './shared';
+import { effectiveLoserCount, emitResult, type IO } from './shared';
 
 /**
  * Reaction game round: client-input game where ranking is computed AFTER play.
@@ -32,6 +32,7 @@ export async function runReactionRound(io: IO, room: RoomState) {
 
   // Set status=countdown and stash a placeholder replay so publicRoomState carries
   // intro data for mid-play reconnects via the `currentRound.replay` channel.
+  ++room.roundEpoch;
   room.status = 'countdown';
   const introReplay = {
     durationMs: intro.durationMs,
@@ -69,7 +70,7 @@ export async function runReactionRound(io: IO, room: RoomState) {
         gameId: 'reaction',
         seed,
         players: connectedPlayers,
-        loserCount: room.loserCount,
+        loserCount: effectiveLoserCount(room.loserCount, connectedPlayers.length),
         tapOffsets,
       });
     } catch (err) {

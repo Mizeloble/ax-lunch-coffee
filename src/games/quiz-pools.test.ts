@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TRIVIA_POOL, TRIVIA_GROUPS_BY_ID, TRIVIA_POOL_SORTED } from './trivia/questions';
-import { NONSENSE_POOL } from './nonsense/questions';
+import { NONSENSE_POOL, NONSENSE_GROUPS_BY_ID, NONSENSE_POOL_SORTED } from './nonsense/questions';
 import { buildQuizPlan } from './trivia/server';
 
 // 카피 규칙(questions.ts 헤더 주석: question ~40자, choices 모바일 한 줄, note ≤80자)의
@@ -129,6 +129,37 @@ describe('trivia sibling families', () => {
 // 같은 농담의 재탕이다(예: 과일 '배'가 두 번). trivia는 사실 기반이라 정답 중복(파리,
 // 이집트 등)이 정상이므로 여기서만 검사한다. 숫자로 시작하는 답('3개', '9명')은 개수
 // 문항끼리의 우연한 충돌이라 제외.
+// 넌센스 형제 문항 계보 — trivia와 동일 게이트. 넌센스 풀은 buildQuizPlan을 실제로
+// 돌려보는 테스트가 없어서 태그가 죽어도(오타·부착 누락) 잡을 수 없었다.
+describe('nonsense sibling families', () => {
+  it('only references ids that exist in the pool', () => {
+    const ids = new Set(NONSENSE_POOL.map((q) => q.id));
+    for (const id of NONSENSE_GROUPS_BY_ID.keys()) {
+      expect(ids.has(id), `family table references unknown id "${id}"`).toBe(true);
+    }
+  });
+
+  it('tags the sorted pool the picker actually reads', () => {
+    const tagged = NONSENSE_POOL_SORTED.filter((q) => q.exclusiveGroups?.length);
+    expect(tagged.length).toBe(NONSENSE_GROUPS_BY_ID.size);
+  });
+
+  it('never puts two siblings in the same round', () => {
+    for (let seed = 0; seed < 400; seed++) {
+      const seen = new Map<string, string>();
+      for (const q of buildQuizPlan(seed, NONSENSE_POOL_SORTED).questions) {
+        for (const g of NONSENSE_GROUPS_BY_ID.get(q.id) ?? []) {
+          expect(
+            seen.get(g),
+            `seed ${seed}: ${q.id} and ${seen.get(g)} are both in family "${g}"`,
+          ).toBeUndefined();
+          seen.set(g, q.id);
+        }
+      }
+    }
+  });
+});
+
 describe('nonsense answer uniqueness', () => {
   it('never reuses a (non-numeric) correct answer across questions', () => {
     const seen = new Map<string, string>();

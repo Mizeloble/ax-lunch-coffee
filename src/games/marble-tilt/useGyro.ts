@@ -27,6 +27,18 @@ type DeviceOrientationEventStatic = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
 };
 
+// Permission state is page-global: a grant made through any hook instance (the
+// lobby gate, the main renderer's auto-request) applies to every other instance
+// (e.g. the PermissionPip badge, which never requests itself). Per-instance
+// useState would leave the badge stuck on 'idle' after the real grant, so the
+// state lives at module scope and instances subscribe to it.
+let sharedGyroState: GyroState = 'idle';
+const gyroStateListeners = new Set<(s: GyroState) => void>();
+function setSharedGyroState(s: GyroState) {
+  sharedGyroState = s;
+  for (const l of gyroStateListeners) l(s);
+}
+
 /**
  * Subscribe to deviceorientation events and emit a normalized X-axis tilt value
  * via the supplied callback while `active` is true.
@@ -45,7 +57,17 @@ export function useGyro(opts: {
   onTilt: (x: number) => void;
 }): { state: GyroState; requestPermission: () => void; tare: () => void } {
   const { active, onTilt } = opts;
-  const [state, setState] = useState<GyroState>('idle');
+  const [state, setState] = useState<GyroState>(sharedGyroState);
+
+  // Stay in sync with the page-global permission state (see module scope above).
+  useEffect(() => {
+    const listener = (s: GyroState) => setState(s);
+    gyroStateListeners.add(listener);
+    setState(sharedGyroState);
+    return () => {
+      gyroStateListeners.delete(listener);
+    };
+  }, []);
 
   const onTiltRef = useRef(onTilt);
   onTiltRef.current = onTilt;
@@ -60,7 +82,7 @@ export function useGyro(opts: {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!('DeviceOrientationEvent' in window)) {
-      setState('unsupported');
+      setSharedGyroState('unsupported');
       return;
     }
     const ctor = window.DeviceOrientationEvent as DeviceOrientationEventStatic;
@@ -75,24 +97,24 @@ export function useGyro(opts: {
 
   const requestPermission = useCallback(() => {
     if (typeof window === 'undefined') return;
-    if (state === 'granted' || state === 'unsupported') return;
+    if (sharedGyroState === 'granted' || sharedGyroState === 'unsupported') return;
     if (!('DeviceOrientationEvent' in window)) {
-      setState('unsupported');
+      setSharedGyroState('unsupported');
       return;
     }
     const ctor = window.DeviceOrientationEvent as DeviceOrientationEventStatic;
     if (typeof ctor.requestPermission === 'function') {
-      setState('requesting');
+      setSharedGyroState('requesting');
       ctor
         .requestPermission()
         .then((res) => {
-          setState(res === 'granted' ? 'granted' : 'denied');
+          setSharedGyroState(res === 'granted' ? 'granted' : 'denied');
         })
-        .catch(() => setState('denied'));
+        .catch(() => setSharedGyroState('denied'));
     } else {
-      setState('granted');
+      setSharedGyroState('granted');
     }
-  }, [state]);
+  }, []);
 
   // Attach the listener once we're granted; tare on the first event after the
   // round goes active.

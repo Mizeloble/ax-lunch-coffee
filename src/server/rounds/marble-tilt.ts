@@ -1,7 +1,7 @@
 import { clearMarbleTilt, getRoom, publicRoomState, touch, type RoomState } from '../rooms';
 import { GAME } from '../../lib/constants';
 import { MarbleTiltLiveSim } from '../../games/marble-tilt/liveSim';
-import { emitResult, type IO } from './shared';
+import { effectiveLoserCount, emitResult, type IO } from './shared';
 
 /**
  * Live marble race driven by per-player gyroscope tilt input. Unlike `runRound`
@@ -28,6 +28,7 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
   clearMarbleTilt(room);
 
   const seed = (Math.random() * 0x7fffffff) | 0;
+  const epoch = ++room.roundEpoch;
   room.status = 'countdown';
   io.to(room.id).emit('state', publicRoomState(room));
 
@@ -36,7 +37,7 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
   const sim = new MarbleTiltLiveSim({
     seed,
     players: connectedPlayers.map((p) => ({ playerToken: p.playerToken })),
-    loserCount: room.loserCount,
+    loserCount: effectiveLoserCount(room.loserCount, connectedPlayers.length),
     callbacks: {
       onTick: (payload) => {
         // Guard against late-arriving ticks after a reset / new round.
@@ -72,8 +73,11 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
     return;
   }
 
-  // If the room moved on while WASM was loading (host hit reset), bail.
-  if (!getRoom(room.id) || room.status !== 'countdown') {
+  // If the room moved on while WASM was loading (host hit reset), bail. The
+  // epoch check catches reset→start during the await: status is 'countdown'
+  // again, but it belongs to a newer round — overwriting room.marbleTilt here
+  // would leak that round's (or this round's) undisposed Box2D world.
+  if (!getRoom(room.id) || room.status !== 'countdown' || room.roundEpoch !== epoch) {
     sim.dispose();
     return;
   }

@@ -20,8 +20,12 @@ const TICK_THROTTLE_MS = 200;
 export function ChargePhase() {
   const myToken = useRoomStore((s) => s.myToken);
   const players = useRoomStore((s) => s.state?.players ?? []);
+  // 새로고침·재접속으로 charge:start를 놓친 클라이언트는 state에 실려 오는
+  // endsAt으로 복구한다 — 없으면 남은 충전 시간 내내 플레이스홀더에 갇힌다.
+  const stateEndsAt = useRoomStore((s) => s.state?.chargeEndsAt ?? null);
 
-  const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [startEndsAt, setStartEndsAt] = useState<number | null>(null);
+  const endsAt = startEndsAt ?? stateEndsAt;
   const [now, setNow] = useState(() => Date.now());
   const [myCount, setMyCount] = useState(0);
   const [serverTotals, setServerTotals] = useState<Record<string, number>>({});
@@ -36,7 +40,7 @@ export function ChargePhase() {
   useEffect(() => {
     const socket = getSocket();
     const onStart = (p: { endsAt: number }) => {
-      setEndsAt(p.endsAt);
+      setStartEndsAt(p.endsAt);
       setMyCount(0);
       myCountRef.current = 0;
       lastSentRef.current = 0;

@@ -25,6 +25,10 @@ export type PublicRoomState = {
    * host when its own token equals this — reassigned on host auto-promotion. */
   hostPlayerToken: string | null;
   players: PublicPlayer[];
+  /** Present only while status === 'charging' — lets a client that reloaded
+   * mid-charge (and thus missed the one-shot `charge:start`) rebuild the phase
+   * countdown instead of sitting on a placeholder until the race starts. */
+  chargeEndsAt?: number;
   currentRound?: {
     gameId: GameId;
     startAt: number;
@@ -109,6 +113,14 @@ export type MarbleTiltTickPayload = {
  */
 export type ReactionTapAck = { recorded: true; offsetMs: number } | { recorded: false };
 
+/**
+ * Answer receipt for trivia. Display-only, like ReactionTapAck: the renderer's
+ * optimistic "answered" badge must roll back when the server dropped the answer
+ * (arrived after closeAt / short-circuit advance / rate limit), or the in-game
+ * score would disagree with the final ranking.
+ */
+export type TriviaAnswerAck = { recorded: boolean };
+
 export type ErrorPayload = { code: string; message: string };
 
 export type JoinAck =
@@ -154,7 +166,10 @@ export type ClientToServerEvents = {
    * of truth and returns the recorded offset via ack (display-only channel). */
   'reaction:tap': (ack?: (res: ReactionTapAck) => void) => void;
   /** Trivia game: answer for the currently open question. Server uses arrival time, not client timestamps. */
-  'trivia:answer': (payload: { qIndex: number; choice: 0 | 1 | 2 | 3 }) => void;
+  'trivia:answer': (
+    payload: { qIndex: number; choice: 0 | 1 | 2 | 3 },
+    ack?: (res: TriviaAnswerAck) => void,
+  ) => void;
   /** Marble-tilt: client streams normalized X-axis tilt (-1..1) at ~20 Hz while playing. */
   'marble:tilt': (payload: { x: number }) => void;
   /** Marble-tilt: instant boost (tap). Server enforces per-round budget + cooldown. */

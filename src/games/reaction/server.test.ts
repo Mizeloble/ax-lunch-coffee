@@ -51,14 +51,30 @@ describe('reactionServer.computeResult', () => {
     expect(res.losers).toEqual(['early']);
   });
 
-  it('breaks no-tap ties by playerToken alphabetically (deterministic)', async () => {
-    const res = await reactionServer.computeResult({
+  it('breaks no-tap ties by a seed-derived order — deterministic per seed, varying across seeds', async () => {
+    const tied = async (seed: number) =>
+      (
+        await reactionServer.computeResult({
+          seed,
+          players: players('zoe', 'amy'),
+          loserCount: 1,
+          tapOffsets: { zoe: null, amy: null },
+        })
+      ).ranking;
+    // Same seed → same order, regardless of player input order.
+    expect(await tied(1)).toEqual(await tied(1));
+    const swapped = await reactionServer.computeResult({
       seed: 1,
-      players: players('zoe', 'amy'),
+      players: players('amy', 'zoe'),
       loserCount: 1,
       tapOffsets: { zoe: null, amy: null },
     });
-    expect(res.ranking).toEqual(['amy', 'zoe']);
+    expect(swapped.ranking).toEqual(await tied(1));
+    // Not a fixed token order: across seeds both players lose sometimes.
+    // (Alphabetical tie-break made the same manual player lose every round.)
+    const firsts = new Set<string>();
+    for (let s = 0; s < 20; s++) firsts.add((await tied(s))[0]);
+    expect(firsts).toEqual(new Set(['amy', 'zoe']));
   });
 
   it('is deterministic for the same seed (intro timing)', async () => {

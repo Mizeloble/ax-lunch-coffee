@@ -20,7 +20,7 @@
 
 숫자만 우연히 겹치는 무관한 문항(행성 8개 ↔ 거미 다리 8개)은 넣지 말 것 — 서로 정보를 주지 않는데 추출만 좁아진다.
 - 풀(`TRIVIA_POOL`)은 `id` 사전순(`TRIVIA_POOL_SORTED`)으로 정렬한 뒤 추출. 풀 끝에 새 문제를 추가해도 기존 id의 추출 매핑은 안 깨짐.
-- 동률 tie-break: 점수 DESC → 정답 응답속도 합 ASC → `playerToken` 사전순.
+- 동률 tie-break: 점수 DESC → 정답 응답속도 합 ASC → seed 파생 셔플 순서(`seededTieRank`). 토큰 사전순은 방 생성 후 고정이라 manual 2명 이상이면 매판 같은 사람이 지게 되어 폐기.
 
 ## 방별 출제 이력 (반복 방지)
 `buildQuizPlan(seed, pool, excludeIds)`의 `excludeIds`는 그 방이 **이미 받은 문항 id**다. 파티는 한 자리에서 여러 판을 돌리는데, 345문항 풀도 20라운드면 순수 확률로 슬롯의 ~13%가 겹친다("아까 그거 또 나왔네").

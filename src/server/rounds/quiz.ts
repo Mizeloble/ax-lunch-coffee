@@ -7,7 +7,7 @@ import { computeRunningScores } from '../../games/trivia/scoring';
 import { GAME } from '../../lib/constants';
 import { type GameId } from '../../games/types';
 import type { TriviaPerPlayerAnswers } from '../../games/types';
-import { emitResult, type IO } from './shared';
+import { effectiveLoserCount, emitResult, type IO } from './shared';
 
 // Quiz-family games share one engine (4-choice, speed+combo scoring, live standings):
 // trivia and nonsense differ only by question pool. The runner below picks the pool
@@ -93,6 +93,7 @@ export async function runQuizRound(io: IO, room: RoomState) {
 
   // Status=countdown immediately; stash an intro replay so mid-play reconnects can
   // sync the schedule and questions via `currentRound.replay`.
+  ++room.roundEpoch;
   room.status = 'countdown';
   const introData: TriviaReplayData = {
     schedule: plan.schedule,
@@ -126,8 +127,8 @@ export async function runQuizRound(io: IO, room: RoomState) {
 
     const triviaAnswers: Record<string, TriviaPerPlayerAnswers> = {};
     for (const p of connectedPlayers) {
-      // Manual players can't answer — they get a row of nulls (0 score, infinite-equivalent
-      // tiebreak via deterministic token order).
+      // Manual players can't answer — they get a row of nulls (0 score, tie broken
+      // by the seed-shuffled order in computeQuizResult).
       triviaAnswers[p.playerToken] = p.manual
         ? Array.from({ length: plan.questions.length }, () => null)
         : (room.trivia?.answers.get(p.playerToken) ?? Array.from({ length: plan.questions.length }, () => null));
@@ -139,7 +140,7 @@ export async function runQuizRound(io: IO, room: RoomState) {
         gameId,
         seed,
         players: connectedPlayers,
-        loserCount: room.loserCount,
+        loserCount: effectiveLoserCount(room.loserCount, connectedPlayers.length),
         triviaAnswers,
         excludeIds,
       });

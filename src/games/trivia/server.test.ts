@@ -263,17 +263,35 @@ describe('computeQuizResult', () => {
     expect(res.losers).toEqual(['wrong']);
   });
 
-  it('breaks exact ties by playerToken alphabetically', () => {
-    const res = computeQuizResult(
-      {
-        seed: SEED,
-        players: players('zed', 'ann'),
-        loserCount: 1,
-        triviaAnswers: { zed: allCorrect(0), ann: allCorrect(0) },
-      },
-      POOL,
-    );
-    expect(res.ranking).toEqual(['ann', 'zed']);
+  it('breaks exact ties by a seed-derived order — deterministic per seed, varying across seeds', () => {
+    const tied = (seed: number) =>
+      computeQuizResult(
+        {
+          seed,
+          players: players('zed', 'ann'),
+          loserCount: 1,
+          triviaAnswers: { zed: allCorrect(0), ann: allCorrect(0) },
+        },
+        POOL,
+      ).ranking;
+    // Same seed → same order (server authority stays reproducible)...
+    expect(tied(SEED)).toEqual(tied(SEED));
+    // ...input order of players doesn't matter either.
+    expect(
+      computeQuizResult(
+        {
+          seed: SEED,
+          players: players('ann', 'zed'),
+          loserCount: 1,
+          triviaAnswers: { zed: allCorrect(0), ann: allCorrect(0) },
+        },
+        POOL,
+      ).ranking,
+    ).toEqual(tied(SEED));
+    // ...but not a fixed token order: across seeds both players lose sometimes.
+    // (Alphabetical tie-break made the same person lose every round.)
+    const firsts = new Set(Array.from({ length: 20 }, (_, s) => tied(s)[0]));
+    expect(firsts).toEqual(new Set(['ann', 'zed']));
   });
 
   it('is deterministic for identical input', () => {

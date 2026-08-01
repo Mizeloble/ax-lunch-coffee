@@ -8,7 +8,7 @@
 
 ## 결정성
 - `prepareReactionIntro(seed)` — mulberry32로 `goAtOffset ∈ [PRE_GO_MIN, PRE_GO_MAX]` 산출. 같은 seed면 항상 같은 시각.
-- 동률 tie-break은 `playerToken` 사전순.
+- 동률 tie-break은 seed 파생 셔플 순서(`seededTieRank`) — 토큰 사전순은 방 생성 후 고정이라 manual 2명 이상이면 매판 같은 사람이 지게 되어 폐기.
 
 ## 분류
 - `offset < REACTION_MIN_HUMAN_RT_MS(80ms)` = false start (음수 포함). 가장 일찍 누른 false-starter가 가장 꼴등.

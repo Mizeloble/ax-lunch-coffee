@@ -25,6 +25,8 @@ export type NonsenseQuestion = {
   correctIndex: 0 | 1 | 2 | 3;
   /** 정답 공개 화면에 뜨는 한 줄 해설. ≤80자. 답이 자명하면 생략. */
   note?: string;
+  /** 형제 묶음(아래 EXCLUSIVE_GROUPS). 리터럴엔 안 적고 로드 시 부착 — trivia와 동일 규약. */
+  exclusiveGroups?: readonly string[];
 };
 
 export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
@@ -1409,7 +1411,35 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
   },
 ];
 
+// 형제 문항 배제 — 같은 템플릿이거나 정답↔오답이 교차하는 닫힌 묶음은 한 라운드에
+// 같이 못 나온다. 앞 문항 정답 공개가 뒷 문항을 기계적으로 풀어버리기 때문(trivia의
+// EXCLUSIVE_GROUPS와 동일 메커니즘 — 엔진의 noUsedSibling이 이 태그를 읽는다).
+// 계보는 여기 한 곳에만 — 문항 리터럴엔 절대 안 적는다. 오타 id는 quiz-pools.test.ts가 잡는다.
+const EXCLUSIVE_GROUPS: Readonly<Record<string, readonly string[]>> = {
+  // "거꾸로 읽어도 똑같은 X는?" — 하나 공개되면 나머지는 보기에서 회문 찾기가 된다.
+  palindrome: ['pun-e-palindrome-tomato', 'pun-e-palindrome-goose', 'pun-e-palindrome-swiss'],
+  // "X가 크게 웃으면?" 동일 템플릿.
+  'laugh-template': ['pun-laughing-cow', 'pun-a-radish-laugh', 'pun-a-sheep-yes'],
+  // "X가 길을 잃으면?" 동일 템플릿 + 보기 3개(길치·마마보이·미아) 공유.
+  'lost-template': ['pun-dad-lost', 'pun-d-uncle-job'],
+  // 수건·걸레·비누 — "닦을수록/씻을수록/말리며" 계열에 서로가 서로의 오답으로 등장.
+  'towel-rag-soap': ['logic-b-wet-while-drying', 'pun-c-dirty-clean', 'mix-a-soap-thin'],
+};
+
+/** id → 속한 묶음 이름들. */
+export const NONSENSE_GROUPS_BY_ID: ReadonlyMap<string, readonly string[]> = (() => {
+  const map = new Map<string, string[]>();
+  for (const [group, ids] of Object.entries(EXCLUSIVE_GROUPS)) {
+    for (const id of ids) map.set(id, [...(map.get(id) ?? []), group]);
+  }
+  return map;
+})();
+
 // id 사전순 정렬 — 추출 결정성을 풀의 삽입 순서와 분리한다(trivia와 동일 규약).
-export const NONSENSE_POOL_SORTED: readonly NonsenseQuestion[] = [...NONSENSE_POOL].sort((a, b) =>
-  a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
-);
+// 형제 태그도 trivia처럼 여기서 부착한다.
+export const NONSENSE_POOL_SORTED: readonly NonsenseQuestion[] = [...NONSENSE_POOL]
+  .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  .map((q) => {
+    const groups = NONSENSE_GROUPS_BY_ID.get(q.id);
+    return groups ? { ...q, exclusiveGroups: groups } : q;
+  });

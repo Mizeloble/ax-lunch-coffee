@@ -7,7 +7,7 @@ import { getSocket } from '@/lib/socket-client';
 import { haptics } from '@/games/marble/haptics';
 import { GAME } from '@/lib/constants';
 import { GAME_META, type GameId } from '@/games/types';
-import type { TriviaReschedulePayload, TriviaStandingsPayload } from '@/lib/protocol';
+import type { TriviaAnswerAck, TriviaReschedulePayload, TriviaStandingsPayload } from '@/lib/protocol';
 import { computeRunningScores } from './scoring';
 import type { TriviaReplayData } from './server';
 
@@ -219,7 +219,21 @@ export function TriviaRenderer({
       return next;
     });
     haptics.chargeTap();
-    getSocket().emit('trivia:answer', { qIndex, choice });
+    getSocket().emit('trivia:answer', { qIndex, choice }, (res: TriviaAnswerAck) => {
+      if (res?.recorded) return;
+      // 서버가 답을 버렸다(마감 직후 도착·단축 조기 마감·레이트리밋). 낙관 기록을
+      // 되돌려야 "답변 완료 + 득점" 유령 표시가 결과 화면과 어긋나지 않는다.
+      setMyAnswers((prev) => {
+        const next = prev.slice();
+        next[qIndex] = null;
+        return next;
+      });
+      setMyPickOffsets((prev) => {
+        const next = prev.slice();
+        next[qIndex] = null;
+        return next;
+      });
+    });
   }
 
   const isLastQuestion =

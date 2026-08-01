@@ -1,7 +1,7 @@
 import { getRoom, publicRoomState, touch, type RoomState } from '../rooms';
 import { runGame } from '../game-runner';
 import { GAME } from '../../lib/constants';
-import { emitResult, type IO } from './shared';
+import { effectiveLoserCount, emitResult, type IO } from './shared';
 
 /**
  * Run sim → broadcast countdown + game:start → schedule playing/result transitions.
@@ -16,6 +16,7 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
   }
 
   const seed = (Math.random() * 0x7fffffff) | 0;
+  const epoch = ++room.roundEpoch;
   // Mark as countdown immediately so a second click is ignored even while WASM loads
   room.status = 'countdown';
   io.to(room.id).emit('state', publicRoomState(room));
@@ -26,7 +27,7 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
       gameId: room.gameId,
       seed,
       players: connectedPlayers,
-      loserCount: room.loserCount,
+      loserCount: effectiveLoserCount(room.loserCount, connectedPlayers.length),
       chargeRatios,
     });
   } catch (err) {
@@ -35,6 +36,11 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
     io.to(room.id).emit('state', publicRoomState(room));
     return;
   }
+
+  // If the room moved on while the sim was running (host hit reset, possibly
+  // followed by another start), this run is stale — don't clobber the newer
+  // round's currentRound / broadcasts.
+  if (!getRoom(room.id) || room.status !== 'countdown' || room.roundEpoch !== epoch) return;
 
   const startAt = Date.now() + GAME.COUNTDOWN_MS;
   room.currentRound = { gameId: room.gameId, seed, startAt, replay };

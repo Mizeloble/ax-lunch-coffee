@@ -17,7 +17,7 @@ import {
 } from './rooms';
 import { ko } from '../lib/i18n';
 import { GAME, NICKNAME, ROOM, SOCKET_RATE } from '../lib/constants';
-import { GAME_META, isLiveGame, isQuizGame, type GameId } from '../games/types';
+import { GAME_META, gameCategory, isLiveGame, isQuizGame, type GameId } from '../games/types';
 import { checkRateLimit } from './rate-limit';
 import { incCounter } from './metrics';
 import type { IO } from './rounds/shared';
@@ -240,7 +240,7 @@ export function attachSocketHandlers(io: IO) {
       const arrivalAt = Date.now();
       if (hotLimited(socket, 'tap')) return ack?.({ recorded: false });
       const room = currentRoomId ? getRoom(currentRoomId) : null;
-      if (!room || room.gameId !== 'reaction' || !room.reaction) return ack?.({ recorded: false });
+      if (!room || gameCategory(room.gameId) !== 'reaction' || !room.reaction) return ack?.({ recorded: false });
       if (room.status !== 'playing') return ack?.({ recorded: false });
       if (arrivalAt > room.reaction.deadlineAt) return ack?.({ recorded: false });
       const player = findPlayerBySocket(room, socket.id);
@@ -254,29 +254,32 @@ export function attachSocketHandlers(io: IO) {
       ack?.({ recorded: true, offsetMs: offset });
     });
 
-    socket.on('trivia:answer', (payload) => {
+    socket.on('trivia:answer', (payload, ack) => {
       // Capture arrival time IMMEDIATELY — server-arrival is the truth for tiebreak.
       const arrivalAt = Date.now();
-      if (hotLimited(socket, 'answer')) return;
+      if (hotLimited(socket, 'answer')) return ack?.({ recorded: false });
       const room = currentRoomId ? getRoom(currentRoomId) : null;
-      if (!room || !isQuizGame(room.gameId) || !room.trivia) return;
-      if (room.status !== 'playing') return;
-      if (!isObj(payload)) return;
+      if (!room || !isQuizGame(room.gameId) || !room.trivia) return ack?.({ recorded: false });
+      if (room.status !== 'playing') return ack?.({ recorded: false });
+      if (!isObj(payload)) return ack?.({ recorded: false });
       const { qIndex, choice } = payload;
-      if (typeof qIndex !== 'number' || !Number.isInteger(qIndex)) return;
-      if (qIndex < 0 || qIndex >= room.trivia.openAts.length) return;
-      if (choice !== 0 && choice !== 1 && choice !== 2 && choice !== 3) return;
+      if (typeof qIndex !== 'number' || !Number.isInteger(qIndex)) return ack?.({ recorded: false });
+      if (qIndex < 0 || qIndex >= room.trivia.openAts.length) return ack?.({ recorded: false });
+      if (choice !== 0 && choice !== 1 && choice !== 2 && choice !== 3) return ack?.({ recorded: false });
       const openAt = room.trivia.openAts[qIndex];
       const closeAt = room.trivia.closeAts[qIndex];
       // Strict window: only accept answers for the question that's currently open.
-      if (arrivalAt < openAt || arrivalAt > closeAt) return;
+      if (arrivalAt < openAt || arrivalAt > closeAt) return ack?.({ recorded: false });
       const player = findPlayerBySocket(room, socket.id);
-      if (!player) return;
+      if (!player) return ack?.({ recorded: false });
       const answers = room.trivia.answers.get(player.playerToken);
-      if (!answers) return;
+      if (!answers) return ack?.({ recorded: false });
       // First answer per question only.
-      if (answers[qIndex]) return;
+      if (answers[qIndex]) return ack?.({ recorded: false });
       answers[qIndex] = { choice, atOffsetMs: arrivalAt - openAt };
+      // Receipt so the renderer's optimistic "answered" badge can roll back when
+      // the answer was dropped — the in-game score must match the final ranking.
+      ack?.({ recorded: true });
       // After recording, see if everyone's done — if so, collapse the remaining
       // wait and broadcast the new schedule.
       room.trivia.shortCircuitFromAnswer(qIndex);

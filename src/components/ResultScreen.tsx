@@ -33,14 +33,24 @@ export function ResultScreen({
 
   if (!result || !state) return null;
 
+  // 결과 화면의 게임 라벨·지표는 방금 끝난 라운드 기준이어야 한다. state.gameId는
+  // 호스트가 결과 화면에서 다음 게임을 고르는 즉시 바뀌므로 여기서 쓰면 거짓 표기가 된다.
+  const roundGameId = state.currentRound?.gameId ?? state.gameId;
+
+  // grace 만료로 방에서 제거된 플레이어(라운드 중 탭을 닫은 꼴찌)도 결과에는 남아야
+  // 한다 — state.players에 없으면 라운드 시작 스냅샷(gameStart.players)에서 찾는다.
+  const findPlayer = (tk: string) =>
+    state.players.find((p) => p.playerToken === tk) ??
+    gameStart?.players.find((p) => p.playerToken === tk);
+
   const losers = result.losers
-    .map((tk) => state.players.find((p) => p.playerToken === tk))
+    .map(findPlayer)
     .filter((p): p is NonNullable<typeof p> => !!p);
 
   const iLost = !!myToken && result.losers.includes(myToken);
 
   const fullRanking = result.ranking
-    .map((tk) => state.players.find((p) => p.playerToken === tk))
+    .map(findPlayer)
     .filter((p): p is NonNullable<typeof p> => !!p);
 
   const canReplay = !!gameStart && !!onReplay;
@@ -48,7 +58,7 @@ export function ResultScreen({
   // Reaction game: pull per-player tap offsets from the post-round state broadcast.
   // Empty during the intro broadcast — only populated when the round finishes.
   const reactionOffsets =
-    gameCategory(state.gameId) === 'reaction'
+    gameCategory(roundGameId) === 'reaction'
       ? (state.currentRound?.replay as ReactionReplayData | undefined)?.offsets
       : undefined;
   const showReactionMs = !!reactionOffsets && Object.keys(reactionOffsets).length > 0;
@@ -57,7 +67,7 @@ export function ResultScreen({
   // = final score. Empty during the intro broadcast — only populated when the
   // round finishes.
   const triviaScores =
-    isQuizGame(state.gameId)
+    isQuizGame(roundGameId)
       ? (state.currentRound?.replay as TriviaReplayData | undefined)?.scores
       : undefined;
   const showTriviaScores = !!triviaScores && Object.keys(triviaScores).length > 0;
@@ -67,17 +77,17 @@ export function ResultScreen({
       )
     : undefined;
   const triviaQuestions =
-    isQuizGame(state.gameId)
+    isQuizGame(roundGameId)
       ? (state.currentRound?.replay as TriviaReplayData | undefined)?.questions
       : undefined;
 
   // 패자 사유는 게임마다 다르다 — 마블은 "꼴찌", 퀴즈는 "최저 점수", 반응속도는
   // "가장 늦게". 고정 문구("패자")를 쓰면 퀴즈 결과에서 거짓말이 된다.
-  const loserReason = ko.result.loserReason[gameCategory(state.gameId)];
+  const loserReason = ko.result.loserReason[gameCategory(roundGameId)];
 
   // 퀴즈 지표 한 줄("5문제 중 1개 정답 · 640점") — 결과 화면과 공유 카드가 같은 계산을 쓴다.
   const triviaPicks =
-    isQuizGame(state.gameId)
+    isQuizGame(roundGameId)
       ? (state.currentRound?.replay as TriviaReplayData | undefined)?.picks
       : undefined;
   const quizMetricFor = (tk: string): string | null => {
@@ -94,7 +104,7 @@ export function ResultScreen({
   // 공유 카드 지표 — 4b 규칙 그대로 게임별로 갈린다(검토 문서 5a). 퀴즈는 위 계산,
   // 반응속도는 결과 화면과 같은 formatReactionOffset, 마블 계열은 "N명 중 꼴찌".
   const cardMetricFor = (tk: string): string | null => {
-    const cat = gameCategory(state.gameId);
+    const cat = gameCategory(roundGameId);
     if (cat === 'quiz') return quizMetricFor(tk);
     if (cat === 'reaction') {
       const label = reactionOffsets ? formatReactionOffset(reactionOffsets[tk]) : null;
@@ -164,7 +174,7 @@ export function ResultScreen({
             <div className="flex items-baseline justify-between gap-2 px-1">
               <h2 className="text-[13px] font-bold text-zinc-400">{ko.result.fullRanking}</h2>
               <span className="text-[13px] text-zinc-600">
-                {ko.result.rankingSub(ko.games[state.gameId])}
+                {ko.result.rankingSub(ko.games[roundGameId])}
               </span>
             </div>
             <RankingList
@@ -183,7 +193,7 @@ export function ResultScreen({
           <ResultShareButton
             losers={losers}
             header={ko.share.cardHeader(
-              `${GAME_META[state.gameId].emoji} ${ko.games[state.gameId]}`,
+              `${GAME_META[roundGameId].emoji} ${ko.games[roundGameId]}`,
               state.players.length,
             )}
             reasonBadge={ko.result.loserReasonBadge(loserReason)}
@@ -272,7 +282,7 @@ export function ResultScreen({
           worth teasing about ("4명 다 맞혔는데 한 명만…"). */}
       {triviaQuestions &&
         triviaQuestions.length > 0 &&
-        isQuizGame(state.gameId) &&
+        isQuizGame(roundGameId) &&
         (() => {
           const picks =
             (state.currentRound?.replay as TriviaReplayData | undefined)?.picks ?? {};

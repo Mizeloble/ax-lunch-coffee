@@ -1,3 +1,4 @@
+import { ko } from '@/lib/i18n';
 import type { SimulationResult } from '../sim';
 import type { Pane, PlayerInfo } from './types';
 import { MARBLE_RADIUS, VIEW_HEIGHT_METERS, ZOOM_MAX } from './constants';
@@ -163,7 +164,7 @@ export function drawScene(
     ctx.font = `bold ${12 * dpr}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fbbf24';
-    ctx.fillText('FINISH', px + pw / 2, goalPy - 8 * dpr);
+    ctx.fillText(ko.marble.finishLine, px + pw / 2, goalPy - 8 * dpr);
   }
 
   // Marbles

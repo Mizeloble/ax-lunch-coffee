@@ -1,7 +1,7 @@
 import type { ReplayPayload } from '../../server/rooms';
 import type { ComputeResultInput, GameServerModule } from '../types';
 import { GAME } from '../../lib/constants';
-import { mulberry32 } from '../../lib/rng';
+import { mulberry32, seededTieRank } from '../../lib/rng';
 import { TRIVIA_POOL_SORTED } from './questions';
 import { computeRunningScores } from './scoring';
 
@@ -284,10 +284,14 @@ export function computeQuizResult(
     return { token: p.playerToken, total, cumulative, speedSum };
   });
 
+  // Full ties (identical total + speedSum — in practice manual players, who all
+  // sit at 0/0) fall through to a seed-shuffled order, not token order: token
+  // order is fixed per room, which would make the same person lose every round.
+  const tieRank = seededTieRank(seed, players.map((p) => p.playerToken));
   entries.sort((a, b) => {
     if (a.total !== b.total) return b.total - a.total; // higher score = better
     if (a.speedSum !== b.speedSum) return a.speedSum - b.speedSum; // faster = better
-    return a.token < b.token ? -1 : a.token > b.token ? 1 : 0;
+    return (tieRank.get(a.token) ?? 0) - (tieRank.get(b.token) ?? 0);
   });
 
   const ranking = entries.map((e) => e.token);

@@ -83,7 +83,14 @@ export function ReactionRenderer({
       setFalseStartLocked(true);
       // Still emit so the server records this player's first input as a false start.
       // Server uses arrival time, not our `tapAt`, so we don't send a timestamp.
-      getSocket().emit('reaction:tap');
+      // Ack mirrors the valid-tap branch below: a tap just before goAt can arrive
+      // *after* it (network latency) and be recorded as a valid offset — unlock
+      // the UI so the in-game badge matches the ranking the result screen shows.
+      getSocket().emit('reaction:tap', (res: ReactionTapAck) => {
+        if (!res?.recorded || res.offsetMs < GAME.REACTION_MIN_HUMAN_RT_MS) return;
+        setFalseStartLocked(false);
+        setMyOffsetMs(res.offsetMs);
+      });
       return;
     }
     if (tapAt > deadlineAt) return; // window closed
