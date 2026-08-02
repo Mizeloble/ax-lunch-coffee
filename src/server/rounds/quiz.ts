@@ -1,6 +1,11 @@
 import { clearTrivia, getRoom, publicRoomState, touch, type RoomState } from '../rooms';
 import { runGame } from '../game-runner';
-import { buildQuizPlan, type QuizQuestion, type TriviaReplayData } from '../../games/trivia/server';
+import {
+  buildQuizPlan,
+  type QuizQuestion,
+  type TriviaIntroData,
+  type TriviaReplayData,
+} from '../../games/trivia/server';
 import { TRIVIA_POOL_SORTED } from '../../games/trivia/questions';
 import { NONSENSE_POOL_SORTED } from '../../games/nonsense/questions';
 import { computeRunningScores } from '../../games/trivia/scoring';
@@ -51,8 +56,12 @@ function logQuestionStats(roomId: string, gameId: GameId, data: TriviaReplayData
  *   3. after the last reveal + TRIVIA_TAIL_MS, build per-player answer arrays and
  *      call computeResult to derive ranking.
  *
- * Like reaction, `game:start` carries a full intro replay (the entire schedule +
- * questions + correct indices). The final `game:result` only needs ranking/losers.
+ * Like reaction, `game:start` carries an intro replay (schedule + questions) —
+ * WITHOUT correct indices: each answer is pushed at its own reveal time on
+ * `trivia:standings`, so devtools can't read the round's answers up front. The
+ * broadcast seed is masked for the same reason (the pool is open source, so the
+ * real seed would let a client rebuild the whole plan, answers included). The
+ * final `game:result` only needs ranking/losers.
  */
 export async function runQuizRound(io: IO, room: RoomState) {
   const connectedPlayers = [...room.players.values()].filter((p) => p.connected);
@@ -92,14 +101,18 @@ export async function runQuizRound(io: IO, room: RoomState) {
   const expectedTokens = connectedPlayers.filter((p) => !p.manual).map((p) => p.playerToken);
 
   // Status=countdown immediately; stash an intro replay so mid-play reconnects can
-  // sync the schedule and questions via `currentRound.replay`.
+  // sync the schedule and questions via `currentRound.replay`. Answer-free: this
+  // payload also rides every mid-play state broadcast.
   ++room.roundEpoch;
   room.status = 'countdown';
-  const introData: TriviaReplayData = {
+  const introData: TriviaIntroData = {
     schedule: plan.schedule,
-    questions: plan.questions,
-    scores: {},
-    picks: {},
+    questions: plan.questions.map(({ id, category, question, choices }) => ({
+      id,
+      category,
+      question,
+      choices,
+    })),
   };
   const introReplay = {
     durationMs: plan.durationMs,
@@ -186,7 +199,12 @@ export async function runQuizRound(io: IO, room: RoomState) {
     standings.sort((a, b) =>
       a.score !== b.score ? b.score - a.score : a.playerToken < b.playerToken ? -1 : 1,
     );
-    io.to(room.id).emit('trivia:standings', { qIndex: qi, standings });
+    // The reveal channel: this question's answer travels only now, not at game:start.
+    io.to(room.id).emit('trivia:standings', {
+      qIndex: qi,
+      correctIndex: correctIndices[qi],
+      standings,
+    });
   };
 
   // Schedule the per-qi standings broadcasts. Fires at closeAt — the start of the
@@ -284,7 +302,9 @@ export async function runQuizRound(io: IO, room: RoomState) {
   io.to(room.id).emit('countdown', { startAt });
   io.to(room.id).emit('game:start', {
     gameId,
-    seed,
+    // Masked: the pool is public, so the real seed reconstructs the plan
+    // (answers included) via buildQuizPlan. No client code reads this field.
+    seed: 0,
     startAt,
     durationMs: plan.durationMs,
     replay: introData,

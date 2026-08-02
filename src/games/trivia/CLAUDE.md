@@ -32,6 +32,7 @@
 ## 페이즈
 - 문제별 `[openAt, closeAt)` 윈도우 안에서만 답 수락. 그 외 무시.
 - 클라이언트 문제 노출/정답 공개는 `replay.data.schedule`(서버 권위) 기반 wall-clock으로 자동 분기.
+- **정답 인덱스는 사전 배포 금지** — `game:start`/mid-play state의 문항은 answer-free(`TriviaIntroData`), 각 문항 정답은 closeAt의 `trivia:standings.correctIndex`로만 push. `game:start`의 seed도 마스킹(풀이 공개라 seed만으로 계획 전체가 역산됨).
 
 ## 금기
 - `Math.random()` / `Date.now()`를 `computeResult`/`buildQuizPlan`에서 호출 금지.

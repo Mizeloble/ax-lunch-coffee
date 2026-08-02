@@ -63,9 +63,14 @@ export type CountdownPayload = { startAt: number };
  * (i.e. when the reveal phase begins) so clients can show running totals during
  * the reveal without learning what others picked before they answered themselves.
  * Standings are sorted server-side, descending by score.
+ *
+ * Also the reveal channel: `correctIndex` is this question's answer, pushed only
+ * now — the intro broadcast is answer-free so devtools can't read the whole
+ * round's answers at game:start.
  */
 export type TriviaStandingsPayload = {
   qIndex: number;
+  correctIndex: 0 | 1 | 2 | 3;
   standings: Array<{ playerToken: string; score: number; combo: number }>;
 };
 
@@ -121,6 +126,16 @@ export type ReactionTapAck = { recorded: true; offsetMs: number } | { recorded: 
  */
 export type TriviaAnswerAck = { recorded: boolean };
 
+/**
+ * Reaction game GO signal, emitted by the server AT goAt — never announced in
+ * advance. Pre-announcing goAt (or the round seed it derives from) let a one-line
+ * devtools script schedule an inhumanly fast tap; now the earliest possible
+ * scripted reaction is bounded by real network latency. Carries the authoritative
+ * timestamps so the client can keep rendering phases off its wall clock after
+ * receipt.
+ */
+export type ReactionGoPayload = { goAt: number; deadlineAt: number };
+
 export type ErrorPayload = { code: string; message: string };
 
 export type JoinAck =
@@ -143,6 +158,7 @@ export type ServerToClientEvents = {
   'charge:state': (payload: ChargeStatePayload) => void;
   'game:start': (payload: GameStartPayload) => void;
   'game:result': (payload: ResultPayload) => void;
+  'reaction:go': (payload: ReactionGoPayload) => void;
   'trivia:standings': (payload: TriviaStandingsPayload) => void;
   'trivia:reschedule': (payload: TriviaReschedulePayload) => void;
   'marble:tick': (payload: MarbleTiltTickPayload) => void;

@@ -43,6 +43,26 @@ const DEFAULT_DIFFICULTY = 2;
  * the same `scoring.ts` formula), and the result screen uses the authoritative
  * snapshot here.
  */
+/**
+ * Question shape safe to broadcast while a round is live: no `correctIndex` and
+ * no `note`. The full plan (with answers) used to ride on `game:start`, which let
+ * anyone read all five answers from devtools three seconds into the round. The
+ * correct index is now pushed per question at reveal time (`trivia:standings`),
+ * and notes only appear in the post-round result data.
+ */
+export type PublicQuizQuestion = {
+  id: string;
+  category: string;
+  question: string;
+  choices: [string, string, string, string];
+};
+
+/** Answer-free intro payload for `game:start` and mid-play state broadcasts. */
+export type TriviaIntroData = {
+  schedule: TriviaReplayData['schedule'];
+  questions: PublicQuizQuestion[];
+};
+
 export type TriviaReplayData = {
   schedule: {
     /** ms offsets from startAt — when each question becomes interactive. */

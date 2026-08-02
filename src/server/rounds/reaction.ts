@@ -13,7 +13,10 @@ import { effectiveLoserCount, emitResult, type IO } from './shared';
  *   4. after deadline + REACTION_TAIL_MS, build tapOffsets and call computeResult
  *
  * Note: unlike marble, the broadcast game:start sends an *intro-only* replay
- * payload (`{ goAt, deadlineAt }`). The final ranking arrives via game:result.
+ * payload. goAt is NEVER announced in advance — a scheduled `reaction:go` event
+ * fires at goAt itself (pre-announcing it, or the seed it derives from, let a
+ * one-line devtools script tap inhumanly fast with perfect consistency). The
+ * final ranking arrives via game:result.
  */
 export async function runReactionRound(io: IO, room: RoomState) {
   const connectedPlayers = [...room.players.values()].filter((p) => p.connected);
@@ -40,7 +43,9 @@ export async function runReactionRound(io: IO, room: RoomState) {
     losers: [] as string[],
     // offsets stays empty until the round ends — ResultScreen uses presence of
     // entries (not the field itself) to decide whether to render ms badges.
-    data: { goAt, deadlineAt, offsets: {} as Record<string, number | null> },
+    // goAt/deadlineAt deliberately absent: this data rides every mid-play state
+    // broadcast, which would leak the GO time before it fires.
+    data: { offsets: {} as Record<string, number | null> },
   };
   room.currentRound = { gameId: 'reaction', seed, startAt, replay: introReplay };
 
@@ -94,17 +99,28 @@ export async function runReactionRound(io: IO, room: RoomState) {
     emitResult(io, room, replay);
   }, deadlineAt + GAME.REACTION_TAIL_MS - Date.now());
 
-  room.reaction = { goAt, deadlineAt, firstTaps: new Map(), finishTimer };
+  // The GO signal: emitted AT goAt, never before. Clients flip to the GO screen
+  // on receipt; the payload's timestamps let them keep deriving phases (deadline,
+  // tabulating) off their local clock afterwards.
+  const goTimer = setTimeout(() => {
+    if (!getRoom(room.id) || room.reaction?.goAt !== goAt) return;
+    io.to(room.id).emit('reaction:go', { goAt, deadlineAt });
+  }, goAt - Date.now());
+
+  room.reaction = { goAt, deadlineAt, firstTaps: new Map(), finishTimer, goTimer };
   touch(room);
   io.to(room.id).emit('state', publicRoomState(room));
   io.to(room.id).emit('countdown', { startAt });
   io.to(room.id).emit('game:start', {
     gameId: 'reaction',
-    seed,
+    // Masked: the real seed derives goAt via prepareReactionIntro, which would
+    // re-open the pre-announcement cheat. No client code reads this field.
+    seed: 0,
     startAt,
     durationMs: intro.durationMs,
     // offsets stays empty here — populated on the post-round state broadcast.
-    replay: { goAt, deadlineAt, offsets: {} as Record<string, number | null> },
+    // No goAt/deadlineAt: the GO time arrives via `reaction:go` when it fires.
+    replay: { offsets: {} as Record<string, number | null> },
     players: connectedPlayers.map((p) => ({
       playerToken: p.playerToken,
       nickname: p.nickname,

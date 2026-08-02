@@ -9,7 +9,7 @@ import { GAME } from '@/lib/constants';
 import { GAME_META, type GameId } from '@/games/types';
 import type { TriviaAnswerAck, TriviaReschedulePayload, TriviaStandingsPayload } from '@/lib/protocol';
 import { computeRunningScores } from './scoring';
-import type { TriviaReplayData } from './server';
+import type { TriviaIntroData } from './server';
 
 type Player = { playerToken: string; nickname: string; color: string };
 
@@ -46,7 +46,8 @@ export function TriviaRenderer({
   gameId: GameId;
   startAt: number;
   durationMs: number;
-  replay: TriviaReplayData;
+  /** Answer-free intro — each correctIndex arrives at reveal via trivia:standings. */
+  replay: TriviaIntroData;
   players: Player[];
   myPlayerToken: string | null;
 }) {
@@ -64,9 +65,15 @@ export function TriviaRenderer({
   // re-renders during the reveal phase keep showing the right snapshot even
   // after the next question opens (we display the LAST received).
   const [standings, setStandings] = useState<TriviaStandingsPayload | null>(null);
+  // Per-question answers, revealed one at a time by trivia:standings at each
+  // closeAt. The intro payload is answer-free — before a question's reveal packet
+  // arrives, its correctIndex is simply unknown to this client.
+  const [revealed, setRevealed] = useState<Array<0 | 1 | 2 | 3 | null>>(() =>
+    Array.from({ length: replay.questions.length }, () => null),
+  );
   // All-answered short-circuit: when every player picks before the timer expires,
   // the server emits a new schedule and we render off it instead of replay.schedule.
-  const [scheduleOverride, setScheduleOverride] = useState<TriviaReplayData['schedule'] | null>(
+  const [scheduleOverride, setScheduleOverride] = useState<TriviaIntroData['schedule'] | null>(
     null,
   );
   // The "+N · 🔥combo" toast that flashes at the start of each reveal phase if
@@ -93,7 +100,16 @@ export function TriviaRenderer({
 
   useEffect(() => {
     const sock = getSocket();
-    const standingsHandler = (payload: TriviaStandingsPayload) => setStandings(payload);
+    const standingsHandler = (payload: TriviaStandingsPayload) => {
+      setStandings(payload);
+      setRevealed((prev) => {
+        if (payload.qIndex < 0 || payload.qIndex >= prev.length) return prev;
+        if (prev[payload.qIndex] === payload.correctIndex) return prev;
+        const next = prev.slice();
+        next[payload.qIndex] = payload.correctIndex;
+        return next;
+      });
+    };
     const rescheduleHandler = (payload: TriviaReschedulePayload) =>
       setScheduleOverride({
         openAtOffsets: payload.openAtOffsets,
@@ -125,14 +141,16 @@ export function TriviaRenderer({
   }, [now, startAt, schedule, replay]);
 
   // Local mirror of scoring.ts. Not authoritative — server result wins. Used for
-  // the score badge in the header and the +N toast on reveal entry.
+  // the score badge in the header and the +N toast on reveal entry. Unrevealed
+  // questions score as -1 (matches nothing) until their reveal packet arrives —
+  // safe because reveals always trail the questions being scored.
   const myRunning = useMemo(() => {
-    const correctIndices = replay.questions.map((q) => q.correctIndex);
+    const correctIndices = revealed.map((r) => r ?? -1);
     const answers = myAnswers.map((choice, i) =>
       choice == null ? null : { choice, atOffsetMs: myPickOffsets[i] ?? 0 },
     );
     return computeRunningScores(answers, correctIndices);
-  }, [myAnswers, myPickOffsets, replay]);
+  }, [myAnswers, myPickOffsets, revealed]);
 
   // Cumulative score = total points for questions whose reveal has begun.
   const revealedThrough = useMemo(() => {
@@ -172,8 +190,11 @@ export function TriviaRenderer({
   }, [phase, now]);
 
   // Reveal-entry feedback: score toast + correct/wrong haptics + combo haptic.
+  // Waits for the reveal packet (revealed[qIndex]) — the phase flips on the local
+  // clock at closeAt, but the answer arrives over the wire moments later.
   useEffect(() => {
     if (phase.kind !== 'reveal') return;
+    if (revealed[phase.qIndex] == null) return;
     if (revealedRef.current.has(phase.qIndex)) return;
     revealedRef.current.add(phase.qIndex);
 
@@ -191,7 +212,7 @@ export function TriviaRenderer({
     } else if (myAnswers[i] != null) {
       haptics.triviaWrong();
     }
-  }, [phase, myRunning, myAnswers]);
+  }, [phase, myRunning, myAnswers, revealed]);
 
   // Auto-clear the toast after a beat.
   useEffect(() => {
@@ -293,6 +314,7 @@ export function TriviaRenderer({
             qIndex={phase.qIndex}
             myPick={myAnswers[phase.qIndex]}
             revealing={phase.kind === 'reveal'}
+            revealedCorrect={revealed[phase.qIndex]}
             onPick={handlePick}
           />
         )}
@@ -462,12 +484,15 @@ function QuestionView({
   qIndex,
   myPick,
   revealing,
+  revealedCorrect,
   onPick,
 }: {
-  question: TriviaReplayData['questions'][number];
+  question: TriviaIntroData['questions'][number];
   qIndex: number;
   myPick: 0 | 1 | 2 | 3 | null;
   revealing: boolean;
+  /** Server-pushed answer for this question — null until its reveal packet lands. */
+  revealedCorrect: 0 | 1 | 2 | 3 | null;
   onPick: (qIndex: number, choice: 0 | 1 | 2 | 3) => void;
 }) {
   return (
@@ -502,10 +527,10 @@ function QuestionView({
         {question.choices.map((label, i) => {
           const idx = i as 0 | 1 | 2 | 3;
           const picked = myPick === idx;
-          const isCorrect = idx === question.correctIndex;
+          const isCorrect = revealedCorrect != null && idx === revealedCorrect;
           const showCorrect = revealing && isCorrect;
-          const showWrong = revealing && picked && !isCorrect;
-          const dim = revealing && !isCorrect && !picked;
+          const showWrong = revealing && revealedCorrect != null && picked && !isCorrect;
+          const dim = revealing && revealedCorrect != null && !isCorrect && !picked;
           const disabled = revealing || myPick != null;
 
           return (

@@ -74,7 +74,10 @@ export function scoreQuestion(input: QuestionScoreInput): QuestionScoreOutput {
  */
 export function computeRunningScores(
   answers: ReadonlyArray<{ choice: 0 | 1 | 2 | 3; atOffsetMs: number } | null>,
-  correctIndices: ReadonlyArray<0 | 1 | 2 | 3>,
+  // 0-3 on the server. The client passes -1 for questions whose answer hasn't
+  // been revealed yet (answers arrive per question via trivia:standings) — a
+  // sentinel that matches no choice, so unrevealed questions score 0 for now.
+  correctIndices: ReadonlyArray<number>,
 ): { perQuestion: QuestionScoreOutput[]; cumulative: number[]; total: number } {
   const perQuestion: QuestionScoreOutput[] = [];
   const cumulative: number[] = [];

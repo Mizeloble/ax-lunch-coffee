@@ -47,6 +47,8 @@ export type ReactionState = {
   /** playerToken -> first-tap server-arrival offset (ms relative to goAt; negative = false start). */
   firstTaps: Map<string, number>;
   finishTimer: NodeJS.Timeout;
+  /** Fires the `reaction:go` broadcast at goAt — the GO time is never pre-announced. */
+  goTimer: NodeJS.Timeout;
 };
 
 export type TriviaAnswerRecord = { choice: 0 | 1 | 2 | 3; atOffsetMs: number };
@@ -129,6 +131,7 @@ export function clearCharge(room: RoomState) {
 export function clearReaction(room: RoomState) {
   if (!room.reaction) return;
   clearTimeout(room.reaction.finishTimer);
+  clearTimeout(room.reaction.goTimer);
   room.reaction = undefined;
 }
 
@@ -383,7 +386,8 @@ export function publicRoomState(room: RoomState) {
           gameId: room.currentRound.gameId,
           startAt: room.currentRound.startAt,
           durationMs: room.currentRound.replay.durationMs,
-          // Exposed for mid-play reconnects (reaction needs goAt/deadlineAt to render).
+          // Exposed for mid-play reconnects (reaction/quiz intro payloads are
+          // answer-free by construction — see rounds/reaction.ts and rounds/quiz.ts).
           // For marble, `data` is large frame data — only include intro-only payloads.
           // Gate on the round's own gameId, not room.gameId: the host can switch
           // games on the result screen, which must not start leaking marble frames.

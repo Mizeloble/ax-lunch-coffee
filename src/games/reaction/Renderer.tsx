@@ -5,36 +5,37 @@ import { ko } from '@/lib/i18n';
 import { getSocket } from '@/lib/socket-client';
 import { haptics } from '@/games/marble/haptics';
 import { GAME } from '@/lib/constants';
-import type { ReactionTapAck } from '@/lib/protocol';
+import type { ReactionGoPayload, ReactionTapAck } from '@/lib/protocol';
 
 type Player = { playerToken: string; nickname: string; color: string };
 
 type Phase = 'ready' | 'go' | 'tabulating';
 
 /**
- * Reaction game UI. Three wall-clock phases driven by RAF:
- *   ready       startAt..goAt        — gray screen, taps here = false start (visual feedback only)
- *   go          goAt..deadlineAt     — amber GO screen, first tap recorded
+ * Reaction game UI. Three phases:
+ *   ready       startAt..GO signal   — gray screen, taps here = false start (visual feedback only)
+ *   go          GO..deadlineAt       — amber GO screen, first tap recorded
  *   tabulating  deadlineAt..end      — waiting for server-authoritative result
  *
- * Server is the source of truth for tapOffsets — payload carries no timestamp.
- * Background-tab guard: visibility !== 'visible' suppresses tap input entirely.
+ * The GO time is NOT known in advance: the server pushes `reaction:go` at goAt
+ * itself (pre-announcing it let a devtools one-liner schedule an inhuman tap).
+ * After receipt, phases keep deriving off the local clock via the payload's
+ * timestamps. Server is the source of truth for tapOffsets — payload carries no
+ * timestamp. Background-tab guard: visibility !== 'visible' suppresses tap input.
  */
 export function ReactionRenderer({
   startAt,
-  goAt,
-  deadlineAt,
   durationMs,
   myPlayerToken,
 }: {
   startAt: number;
-  goAt: number;
-  deadlineAt: number;
   durationMs: number;
   players: Player[];
   myPlayerToken: string | null;
 }) {
   const [now, setNow] = useState(() => Date.now());
+  // GO signal from the server — null until `reaction:go` lands.
+  const [goTimes, setGoTimes] = useState<ReactionGoPayload | null>(null);
   // Local snapshot of "my reaction time" — server is authoritative for ranking but we
   // surface this immediately so the user sees their effort acknowledged.
   const [myOffsetMs, setMyOffsetMs] = useState<number | null>(null);
@@ -54,6 +55,16 @@ export function ReactionRenderer({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // GO signal — arrives exactly at goAt, never earlier (anti-cheat).
+  useEffect(() => {
+    const sock = getSocket();
+    const goHandler = (payload: ReactionGoPayload) => setGoTimes(payload);
+    sock.on('reaction:go', goHandler);
+    return () => {
+      sock.off('reaction:go', goHandler);
+    };
   }, []);
 
   // 3·2·1 haptic ticks at fixed offsets from startAt. Offsets sit safely below
@@ -76,16 +87,16 @@ export function ReactionRenderer({
     tappedRef.current = true;
     const tapAt = Date.now();
 
-    if (tapAt < goAt) {
+    // No GO signal yet (or tapped before it): false start. A tap racing the GO
+    // packet over the wire can still be recorded as valid by the server — the
+    // ack below unlocks the UI in that case, mirroring the valid-tap branch.
+    if (goTimes == null || tapAt < goTimes.goAt) {
       // false start — visual + haptic, no offset surfaced
       haptics.reactionFalseStart();
       setFalseStartFlash((k) => k + 1);
       setFalseStartLocked(true);
       // Still emit so the server records this player's first input as a false start.
       // Server uses arrival time, not our `tapAt`, so we don't send a timestamp.
-      // Ack mirrors the valid-tap branch below: a tap just before goAt can arrive
-      // *after* it (network latency) and be recorded as a valid offset — unlock
-      // the UI so the in-game badge matches the ranking the result screen shows.
       getSocket().emit('reaction:tap', (res: ReactionTapAck) => {
         if (!res?.recorded || res.offsetMs < GAME.REACTION_MIN_HUMAN_RT_MS) return;
         setFalseStartLocked(false);
@@ -93,13 +104,13 @@ export function ReactionRenderer({
       });
       return;
     }
-    if (tapAt > deadlineAt) return; // window closed
+    if (tapAt > goTimes.deadlineAt) return; // window closed
 
     haptics.reactionGo();
     // Local estimate for instant feedback only — the server ack below replaces it
     // with the recorded offset (the exact number the result screen will show), so
     // the in-game badge and the final ranking can't disagree by latency/clock skew.
-    setMyOffsetMs(Math.max(0, Math.round(tapAt - goAt)));
+    setMyOffsetMs(Math.max(0, Math.round(tapAt - goTimes.goAt)));
     getSocket().emit('reaction:tap', (res: ReactionTapAck) => {
       if (!res?.recorded) return; // keep the local estimate (ack lost / tap ignored)
       if (res.offsetMs < GAME.REACTION_MIN_HUMAN_RT_MS) {
@@ -114,7 +125,12 @@ export function ReactionRenderer({
     });
   }
 
-  const phase: Phase = now < goAt ? 'ready' : now < deadlineAt ? 'go' : 'tabulating';
+  const phase: Phase =
+    goTimes == null || now < goTimes.goAt
+      ? 'ready'
+      : now < goTimes.deadlineAt
+        ? 'go'
+        : 'tabulating';
 
   // Saturating bar — fills to ~85% by REACTION_PRE_GO_MIN_MS (1500ms) and creeps
   // asymptotically toward 100% afterwards. The visual gap between "almost full"

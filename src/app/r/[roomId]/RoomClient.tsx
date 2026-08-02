@@ -17,9 +17,8 @@ import { MarbleRenderer } from '@/games/marble/Renderer';
 import type { SimulationResult } from '@/games/marble/sim';
 import { MarbleTiltRenderer, type MarbleTiltIntroData } from '@/games/marble-tilt/Renderer';
 import { ReactionRenderer } from '@/games/reaction/Renderer';
-import type { ReactionReplayData } from '@/games/reaction/server';
 import { TriviaRenderer } from '@/games/trivia/Renderer';
-import type { TriviaReplayData } from '@/games/trivia/server';
+import type { TriviaIntroData } from '@/games/trivia/server';
 import { gameCategory, skipsResultGate } from '@/games/types';
 import { ROOM, UI } from '@/lib/constants';
 import type { JoinAck } from '@/lib/protocol';
@@ -389,8 +388,6 @@ export default function RoomClient({
           <ReactionRenderer
             key={effectiveStartAt}
             startAt={effectiveStartAt}
-            goAt={(gameStart.replay as ReactionReplayData).goAt}
-            deadlineAt={(gameStart.replay as ReactionReplayData).deadlineAt}
             durationMs={gameStart.durationMs}
             players={gameStart.players}
             myPlayerToken={myToken}
@@ -405,7 +402,7 @@ export default function RoomClient({
             gameId={gameStart.gameId}
             startAt={effectiveStartAt}
             durationMs={gameStart.durationMs}
-            replay={gameStart.replay as TriviaReplayData}
+            replay={gameStart.replay as TriviaIntroData}
             players={gameStart.players}
             myPlayerToken={myToken}
           />
