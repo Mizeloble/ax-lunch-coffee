@@ -6,7 +6,13 @@ import { ko } from '@/lib/i18n';
 import { getSocket, disposeSocket } from '@/lib/socket-client';
 import { useWakeLock } from '@/lib/useWakeLock';
 import { loadIdentity, saveIdentity } from '@/lib/nickname-store';
-import { useRoomStore, type GameStartPayload, type PublicRoomState, type ResultPayload } from '@/store/room-store';
+import {
+  useRoomStore,
+  type GameStartPayload,
+  type PublicRoomState,
+  type ReactionGoPayload,
+  type ResultPayload,
+} from '@/store/room-store';
 import { Lobby } from '@/components/Lobby';
 import { Logo } from '@/components/Logo';
 import { JoinModal } from '@/components/JoinModal';
@@ -37,6 +43,8 @@ export default function RoomClient({
   const setState = useRoomStore((s) => s.setState);
   const setGameStart = useRoomStore((s) => s.setGameStart);
   const setResult = useRoomStore((s) => s.setResult);
+  const setReactionGo = useRoomStore((s) => s.setReactionGo);
+  const reactionGo = useRoomStore((s) => s.reactionGo);
   const resetStore = useRoomStore((s) => s.reset);
   const state = useRoomStore((s) => s.state);
   const myToken = useRoomStore((s) => s.myToken);
@@ -144,9 +152,39 @@ export default function RoomClient({
       if (s.status === 'result' && s.currentRound?.ranking && s.currentRound.losers) {
         setResult({ ranking: s.currentRound.ranking, losers: s.currentRound.losers });
       }
+      // Restore a missed `game:start` (phone locked / tab discarded → full reload
+      // mid-round). Without this the client sits on the lobby for the rest of the
+      // round, and in quiz rounds it also stalls everyone else: the server keeps
+      // waiting on an answer this player has no way to give. Games whose intro is
+      // too large to ride on state (marble's frame track) carry no `replay` here —
+      // they fall back to the waiting screen instead.
+      const round = s.currentRound;
+      if ((s.status === 'countdown' || s.status === 'playing') && round?.replay) {
+        const held = useRoomStore.getState().gameStart;
+        if (held?.startAt !== round.startAt) {
+          setGameStart({
+            gameId: round.gameId,
+            // Masked on the wire for the games that reach this path — no client
+            // code reads it (see rounds/quiz.ts and rounds/reaction.ts).
+            seed: 0,
+            startAt: round.startAt,
+            durationMs: round.durationMs,
+            replay: round.replay,
+            players: s.players.map((p) => ({
+              playerToken: p.playerToken,
+              nickname: p.nickname,
+              color: p.color,
+            })),
+          });
+        }
+      }
     };
     const onGameStart = (g: GameStartPayload) => setGameStart(g);
     const onResult = (r: ResultPayload) => setResult(r);
+    // Subscribed here rather than in ReactionRenderer: on a mid-round reconnect the
+    // server replays this immediately after `state`, before React has mounted the
+    // renderer, so a listener living inside the renderer would never see it.
+    const onReactionGo = (p: ReactionGoPayload) => setReactionGo(p);
     const onErr = ({ message }: { code: string; message: string }) => {
       setErrMsg(message);
       setPhase('error');
@@ -155,6 +193,7 @@ export default function RoomClient({
     socket.on('state', onState);
     socket.on('game:start', onGameStart);
     socket.on('game:result', onResult);
+    socket.on('reaction:go', onReactionGo);
     socket.on('error', onErr);
 
     const identity = loadIdentity();
@@ -233,6 +272,7 @@ export default function RoomClient({
       socket.off('state', onState);
       socket.off('game:start', onGameStart);
       socket.off('game:result', onResult);
+      socket.off('reaction:go', onReactionGo);
       socket.off('error', onErr);
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
@@ -241,7 +281,18 @@ export default function RoomClient({
       window.removeEventListener('online', onOnline);
       if (slowTimer) clearTimeout(slowTimer);
     };
-  }, [roomId, forceJoin, fresh, attemptJoin, setMe, setState, setGameStart, setResult, resetStore]);
+  }, [
+    roomId,
+    forceJoin,
+    fresh,
+    attemptJoin,
+    setMe,
+    setState,
+    setGameStart,
+    setResult,
+    setReactionGo,
+    resetStore,
+  ]);
 
   // Reset the tap-gate whenever a new game begins. Must run before any early
   // return so hook order stays stable across renders.
@@ -317,6 +368,11 @@ export default function RoomClient({
     (!inResult || (!resultAcked && !skipResultGate));
   const showResult = inResult && (resultAcked || !replayPlayed || skipResultGate);
   const showResultPrompt = inResult && replayPlayed && !resultAcked && !skipResultGate;
+  // Reloaded mid-round in a game whose replay can't ride on state (marble's frame
+  // track is megabytes). We can't resume the race, but showing the lobby would
+  // read as "the round vanished" — wait for the result instead.
+  const showRoundWaiting =
+    (state?.status === 'countdown' || state?.status === 'playing') && !showGame;
 
   function handleReplay() {
     setReplayStartAt(Date.now() + UI.REPLAY_LEAD_MS);
@@ -352,8 +408,18 @@ export default function RoomClient({
         </div>
       )}
 
-      {state && (state.status === 'lobby' || (!showGame && !showResult && !inCharging)) && (
-        <Lobby inviteUrl={inviteUrl} onChangeNickname={() => setPhase('need-nickname')} />
+      {state &&
+        !showRoundWaiting &&
+        (state.status === 'lobby' || (!showGame && !showResult && !inCharging)) && (
+          <Lobby inviteUrl={inviteUrl} onChangeNickname={() => setPhase('need-nickname')} />
+        )}
+
+      {showRoundWaiting && (
+        <main className="fixed inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-zinc-950 px-6 text-center">
+          <Logo size={44} className="animate-pulse" />
+          <p className="text-base font-bold text-zinc-200">{ko.game.inProgress}</p>
+          <p className="text-sm text-zinc-500">{ko.game.inProgressSub}</p>
+        </main>
       )}
 
       {inCharging && <ChargePhase />}
@@ -388,6 +454,7 @@ export default function RoomClient({
           <ReactionRenderer
             key={effectiveStartAt}
             startAt={effectiveStartAt}
+            goTimes={reactionGo}
             durationMs={gameStart.durationMs}
             players={gameStart.players}
             myPlayerToken={myToken}

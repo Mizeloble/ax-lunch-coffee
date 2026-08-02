@@ -19,23 +19,27 @@ type Phase = 'ready' | 'go' | 'tabulating';
  *
  * The GO time is NOT known in advance: the server pushes `reaction:go` at goAt
  * itself (pre-announcing it let a devtools one-liner schedule an inhuman tap).
- * After receipt, phases keep deriving off the local clock via the payload's
- * timestamps. Server is the source of truth for tapOffsets — payload carries no
- * timestamp. Background-tab guard: visibility !== 'visible' suppresses tap input.
+ * That signal is received by RoomClient and handed down as `goTimes` — a mid-round
+ * reconnect gets it replayed before this component mounts, so the subscription has
+ * to live above it. After receipt, phases keep deriving off the local clock via the
+ * payload's timestamps. Server is the source of truth for tapOffsets — payload
+ * carries no timestamp. Background-tab guard: visibility !== 'visible' suppresses
+ * tap input.
  */
 export function ReactionRenderer({
   startAt,
+  goTimes,
   durationMs,
   myPlayerToken,
 }: {
   startAt: number;
+  /** null until the server's GO signal lands — before that every tap is a false start. */
+  goTimes: ReactionGoPayload | null;
   durationMs: number;
   players: Player[];
   myPlayerToken: string | null;
 }) {
   const [now, setNow] = useState(() => Date.now());
-  // GO signal from the server — null until `reaction:go` lands.
-  const [goTimes, setGoTimes] = useState<ReactionGoPayload | null>(null);
   // Local snapshot of "my reaction time" — server is authoritative for ranking but we
   // surface this immediately so the user sees their effort acknowledged.
   const [myOffsetMs, setMyOffsetMs] = useState<number | null>(null);
@@ -55,16 +59,6 @@ export function ReactionRenderer({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, []);
-
-  // GO signal — arrives exactly at goAt, never earlier (anti-cheat).
-  useEffect(() => {
-    const sock = getSocket();
-    const goHandler = (payload: ReactionGoPayload) => setGoTimes(payload);
-    sock.on('reaction:go', goHandler);
-    return () => {
-      sock.off('reaction:go', goHandler);
-    };
   }, []);
 
   // 3·2·1 haptic ticks at fixed offsets from startAt. Offsets sit safely below

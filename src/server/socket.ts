@@ -107,6 +107,17 @@ export function attachSocketHandlers(io: IO) {
       socket.join(room.id);
       ack({ ok: true, playerToken: player.playerToken, isHost });
       io.to(room.id).emit('state', publicRoomState(room));
+
+      // Mid-round reconnect into a reaction round whose GO already fired: replay
+      // the signal to this socket alone. `reaction:go` is a one-shot broadcast, so
+      // without this a reloaded player would sit on the "아직!" screen for the rest
+      // of the round. Still never sent early — the goAt check keeps the anti-cheat.
+      if (room.reaction && Date.now() >= room.reaction.goAt) {
+        socket.emit('reaction:go', {
+          goAt: room.reaction.goAt,
+          deadlineAt: room.reaction.deadlineAt,
+        });
+      }
     });
 
     socket.on('host:addPlayer', (payload, ack) => {

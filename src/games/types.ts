@@ -169,10 +169,12 @@ export function skipsResultGate(gameId: GameId): boolean {
   return c === 'reaction' || c === 'quiz';
 }
 
-// reaction + quiz: their `replay.data` is small intro/schedule metadata, safe to
-// embed in `state` broadcasts for mid-play reconnects. Marble's frame data is
-// large and stays out of state (shipped once via `game:start`).
+// reaction + quiz + live-marble: their `replay.data` is small intro/schedule
+// metadata (no frames), safe to embed in `state` broadcasts so a client that
+// reloaded mid-round can rebuild `game:start` and rejoin the round in progress.
+// Precompute marble's frame track is megabytes and stays out of state (shipped
+// once via `game:start`); reloaded players there wait for the result instead.
 export function exposesReplayData(gameId: GameId): boolean {
   const c = gameCategory(gameId);
-  return c === 'reaction' || c === 'quiz';
+  return c === 'reaction' || c === 'quiz' || c === 'live-marble';
 }

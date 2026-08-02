@@ -9,5 +9,10 @@
 ## 호스트 식별
 `hostToken`(서버 발급) 일치 + 현재 소켓이 `room.hostSocketId`와 동일할 때만 호스트 권한 동작.
 
+## 라운드 중 재접속
+폰 잠금·탭 폐기로 **풀 리로드**한 클라는 `game:start`를 놓친다. 그래서 `publicRoomState`의 `currentRound`는 라운드를 재구성할 수 있을 만큼을 담는다 — `exposesReplayData`가 true인 게임(reaction·quiz·live-marble)은 intro까지 실어 보내고, 클라(`RoomClient`)가 이걸로 `gameStart`를 복원한다. precompute 마블은 프레임이 수 MB라 제외 — 그쪽은 로비 대신 "진행 중" 대기 화면을 보여준다.
+
+1회성 이벤트(`reaction:go`)는 state로 못 나르므로 `join` 핸들러가 조건부로 개별 재전송하고, 진행 중 바뀌는 값(퀴즈 단축 스케줄)은 state에 실리는 intro도 같이 갱신해야 한다. 새 게임이 라운드 중 상태를 갖는다면 이 두 경로를 같이 챙길 것.
+
 ## 정리
-빈 방·idle 방은 `rooms.ts`의 `scheduleCleanup`이 자동 정리. 새 게임 추가 시에도 추가 타이머 만들지 말 것.
+빈 방·idle 방은 `rooms.ts`의 `scheduleCleanup`이 자동 정리. 새 게임 추가 시에도 추가 타이머 만들지 말 것. 방이 라운드 도중 삭제될 수 있으므로(`deleteRoom`) 러너·타이머 정리는 거기서도 호출된다.

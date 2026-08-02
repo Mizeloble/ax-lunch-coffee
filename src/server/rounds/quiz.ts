@@ -276,11 +276,13 @@ export async function runQuizRound(io: IO, room: RoomState) {
     room.trivia.finishTimer = scheduleFinishTimer(newCloseAts[newCloseAts.length - 1]);
 
     // Tell every client to realign its wall-clock phase to the new schedule.
-    io.to(room.id).emit('trivia:reschedule', {
-      qIndex,
-      openAtOffsets: newOpenAts.map((t) => t - startAt),
-      closeAtOffsets: newCloseAts.map((t) => t - startAt),
-    });
+    const openAtOffsets = newOpenAts.map((t) => t - startAt);
+    const closeAtOffsets = newCloseAts.map((t) => t - startAt);
+    io.to(room.id).emit('trivia:reschedule', { qIndex, openAtOffsets, closeAtOffsets });
+    // Keep the intro that rides on `state` in sync too — a client reloading after a
+    // short-circuit rebuilds `game:start` from it, and the original offsets would
+    // put it on the wrong question for the rest of the round.
+    introData.schedule = { openAtOffsets, closeAtOffsets };
   };
 
   const finishTimer = scheduleFinishTimer(closeAts[closeAts.length - 1]);

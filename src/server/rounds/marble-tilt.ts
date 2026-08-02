@@ -84,14 +84,15 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
 
   room.marbleTilt = { sim, startAt };
 
-  // Stash a lightweight currentRound so reconnects during play see the right gameId.
-  // The actual replay payload is meaningless for marble-tilt (no frames); clients
-  // should reconnect and rely on the incoming `marble:tick` stream instead.
+  // Stash the intro (entities + bounds + spawn positions — static, no frames) so a
+  // client that reloaded mid-race can rebuild `game:start` from `state` and resume
+  // steering off the incoming `marble:tick` stream. Small enough to ride on state;
+  // see `exposesReplayData`.
   room.currentRound = {
     gameId: 'marble-tilt',
     seed,
     startAt,
-    replay: { durationMs: intro.durationMsHint, ranking: [], losers: [], data: undefined },
+    replay: { durationMs: intro.durationMsHint, ranking: [], losers: [], data: intro },
   };
   touch(room);
   io.to(room.id).emit('state', publicRoomState(room));
