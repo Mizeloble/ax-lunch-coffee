@@ -33,6 +33,9 @@ export type PublicRoomState = {
     gameId: GameId;
     startAt: number;
     durationMs: number;
+    /** Penalty count this round actually ran with (already clamped to the player
+     * count — may differ from the room's `loserCount` setting). */
+    loserCount: number;
     /** Game-specific intro data exposed for mid-play reconnects (e.g. reaction's goAt/deadlineAt). */
     replay?: unknown;
     /** Present only while status === 'result' — lets a client that missed the
@@ -47,6 +50,10 @@ export type GameStartPayload = {
   seed: number;
   startAt: number;
   durationMs: number;
+  /** Penalty count for this round (clamped to the player count server-side).
+   * Renderers need it to reveal *every* loser — without it the marble games
+   * staged the last place alone and contradicted the result screen. */
+  loserCount: number;
   replay: unknown;
   players: { playerToken: string; nickname: string; color: string }[];
 };

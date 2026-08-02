@@ -32,12 +32,13 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
   room.status = 'countdown';
   io.to(room.id).emit('state', publicRoomState(room));
 
+  const loserCount = effectiveLoserCount(room.loserCount, connectedPlayers.length);
   const startAt = Date.now() + GAME.COUNTDOWN_MS;
 
   const sim = new MarbleTiltLiveSim({
     seed,
     players: connectedPlayers.map((p) => ({ playerToken: p.playerToken })),
-    loserCount: effectiveLoserCount(room.loserCount, connectedPlayers.length),
+    loserCount,
     callbacks: {
       onTick: (payload) => {
         // Guard against late-arriving ticks after a reset / new round.
@@ -53,7 +54,7 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
           losers,
           data: undefined as unknown,
         };
-        room.currentRound = { gameId: 'marble-tilt', seed, startAt, replay };
+        room.currentRound = { gameId: 'marble-tilt', seed, startAt, loserCount, replay };
         room.status = 'result';
         io.to(room.id).emit('state', publicRoomState(room));
         emitResult(io, room, replay);
@@ -92,6 +93,7 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
     gameId: 'marble-tilt',
     seed,
     startAt,
+    loserCount,
     replay: { durationMs: intro.durationMsHint, ranking: [], losers: [], data: intro },
   };
   touch(room);
@@ -102,6 +104,7 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
     seed,
     startAt,
     durationMs: intro.durationMsHint,
+    loserCount,
     replay: intro,
     players: connectedPlayers.map((p) => ({
       playerToken: p.playerToken,

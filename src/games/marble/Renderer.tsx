@@ -17,17 +17,27 @@ import {
   formatLoserLabel,
 } from './render/overlay';
 import { roundedClip } from './render/canvas-utils';
+import { resolveLosers } from './render/losers';
 import type { Pane } from './render/types';
 
 export type MarbleRendererProps = {
   startAt: number;
   durationMs: number;
+  /** How many of the trailing finishers take the penalty this round (server-clamped). */
+  loserCount: number;
   replay: SimulationResult;
   players: { playerToken: string; nickname: string; color: string }[];
   myPlayerToken: string | null;
 };
 
-export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerToken }: MarbleRendererProps) {
+export function MarbleRenderer({
+  startAt,
+  durationMs,
+  loserCount,
+  replay,
+  players,
+  myPlayerToken,
+}: MarbleRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -101,25 +111,30 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
     let firedMyFinishHaptic = false;
     let firedLoserHaptic = false;
 
-    // Loser = the very last entry in finishOrder. That's the player who gets the penalty.
-    const loserToken = replay.finishOrder[replay.finishOrder.length - 1];
-    const loserIdx = loserToken ? replay.playerOrder.indexOf(loserToken) : -1;
-    // Second-to-last finisher: their crossing locks in the loser. That's the climactic
-    // moment — the loser's own crossing is anticlimactic since the result is already known.
-    const stlToken = replay.finishOrder[replay.finishOrder.length - 2];
-    const stlIdx = stlToken ? replay.playerOrder.indexOf(stlToken) : -1;
-    const loserDecidedFrame = stlIdx >= 0 ? replay.finishFrames[stlIdx] : -1;
+    // Losers = the trailing `loserCount` entries of finishOrder (worst first) — the
+    // same slice the server used. Staging only dead last (as this did before) told
+    // everyone else they were safe, then the result screen contradicted it.
+    const { loserTokens, lastSafeToken } = resolveLosers(replay.finishOrder, loserCount);
+    // Camera and fanfare stay on dead last — the biggest moment of the reveal.
+    const loserIdx = replay.playerOrder.indexOf(loserTokens[0] ?? '');
+    // The set is locked the instant the last safe player crosses: from then on
+    // everyone still running is a loser, whatever order they finish in.
+    const lastSafeIdx = lastSafeToken ? replay.playerOrder.indexOf(lastSafeToken) : -1;
+    const loserDecidedFrame = lastSafeIdx >= 0 ? replay.finishFrames[lastSafeIdx] : -1;
 
-    // Personal rank: locked when MY marble crosses, or when the loser is decided
-    // (if I'm the loser, since I never cross).
+    // Personal rank: locked when MY marble crosses, or — if I'm one of the losers —
+    // at the reveal, which is when my fate is actually sealed (dead last never crosses).
     const myRank = myPlayerToken ? replay.finishOrder.indexOf(myPlayerToken) + 1 : 0;
     const totalPlayers = replay.playerOrder.length;
+    const iAmLoser = !!myPlayerToken && loserTokens.includes(myPlayerToken);
     const myFinishLockedFrame =
-      myIdx < 0
-        ? -1
-        : myIdx === loserIdx
-          ? loserDecidedFrame
-          : replay.finishFrames[myIdx];
+      myIdx < 0 ? -1 : iAmLoser ? loserDecidedFrame : replay.finishFrames[myIdx];
+
+    // Banner roster — every loser, worst first, so the reveal matches the result screen.
+    const loserBannerEntries = loserTokens.map((tk) => ({
+      nickname: playerByToken.get(tk)?.nickname ?? '',
+      color: playerByToken.get(tk)?.color ?? '#fbbf24',
+    }));
 
     // Two panes: main (my marble) and inset (꼴등 후보). Both share the same draw routine.
     const mainPane: Pane = { px: 0, py: 0, pw: 0, ph: 0, label: '', particles: [], bursts: [], pulse: 0, shake: 0, alpha: 1 };
@@ -220,7 +235,7 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
         firedMyFinishHaptic = true;
         haptics.myFinish();
       }
-      if (!firedLoserHaptic && loserDecidedFrame >= 0 && idx >= loserDecidedFrame && myIdx === loserIdx) {
+      if (!firedLoserHaptic && loserDecidedFrame >= 0 && idx >= loserDecidedFrame && iAmLoser) {
         firedLoserHaptic = true;
         haptics.loserConfirmed();
       }
@@ -301,15 +316,15 @@ export function MarbleRenderer({ startAt, durationMs, replay, players, myPlayerT
       drawLeaderboard(ctx, dpr, W, H, replay, cur, idx, playerByToken, myPlayerToken);
 
       // --- Loser-name reveal banner (everyone sees it, swoops in at decision moment) ---
-      if (loserDecidedFrame >= 0 && idx >= loserDecidedFrame && loserIdx >= 0) {
-        const loserNick = playerByToken.get(replay.playerOrder[loserIdx])?.nickname ?? '';
-        const loserColor = playerByToken.get(replay.playerOrder[loserIdx])?.color ?? '#fbbf24';
-        drawLoserBanner(ctx, dpr, W, H, loserNick, loserColor, idx - loserDecidedFrame, fps, now);
+      if (loserDecidedFrame >= 0 && idx >= loserDecidedFrame && loserBannerEntries.length > 0) {
+        drawLoserBanner(ctx, dpr, W, H, loserBannerEntries, idx - loserDecidedFrame, fps, now);
       }
 
       // --- Personal rank card (centered top, bouncy entry once my rank is locked) ---
       if (myFinishLockedFrame >= 0 && idx >= myFinishLockedFrame && myRank > 0) {
-        drawPersonalRankCard(ctx, dpr, W, H, myRank, totalPlayers, idx - myFinishLockedFrame, fps, now);
+        drawPersonalRankCard(
+          ctx, dpr, W, H, myRank, totalPlayers, iAmLoser, idx - myFinishLockedFrame, fps, now,
+        );
       }
 
       // pulse + shake decay (slower decay so the loser fanfare lingers)

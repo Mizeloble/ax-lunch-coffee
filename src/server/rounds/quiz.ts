@@ -92,6 +92,7 @@ export async function runQuizRound(io: IO, room: RoomState) {
     return;
   }
 
+  const loserCount = effectiveLoserCount(room.loserCount, connectedPlayers.length);
   const startAt = Date.now() + GAME.COUNTDOWN_MS;
   const openAts = plan.schedule.openAtOffsets.map((off) => startAt + off);
   const closeAts = plan.schedule.closeAtOffsets.map((off) => startAt + off);
@@ -120,7 +121,7 @@ export async function runQuizRound(io: IO, room: RoomState) {
     losers: [] as string[],
     data: introData,
   };
-  room.currentRound = { gameId, seed, startAt, replay: introReplay };
+  room.currentRound = { gameId, seed, startAt, loserCount, replay: introReplay };
 
   // Pre-allocate per-player answer slots so the `trivia:answer` handler can no-op
   // for unknown tokens. Each entry mutates in place.
@@ -153,7 +154,7 @@ export async function runQuizRound(io: IO, room: RoomState) {
         gameId,
         seed,
         players: connectedPlayers,
-        loserCount: effectiveLoserCount(room.loserCount, connectedPlayers.length),
+        loserCount,
         triviaAnswers,
         excludeIds,
       });
@@ -172,7 +173,7 @@ export async function runQuizRound(io: IO, room: RoomState) {
     room.servedQuestions ??= {};
     room.servedQuestions[gameId] = [...excludeIds, ...plan.questions.map((q) => q.id)];
 
-    room.currentRound = { gameId, seed, startAt, replay };
+    room.currentRound = { gameId, seed, startAt, loserCount, replay };
     clearTrivia(room);
     room.status = 'result';
     io.to(room.id).emit('state', publicRoomState(room));
@@ -309,6 +310,7 @@ export async function runQuizRound(io: IO, room: RoomState) {
     seed: 0,
     startAt,
     durationMs: plan.durationMs,
+    loserCount,
     replay: introData,
     players: connectedPlayers.map((p) => ({
       playerToken: p.playerToken,

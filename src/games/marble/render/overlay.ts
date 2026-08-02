@@ -103,6 +103,8 @@ export function drawPersonalRankCard(
   H: number,
   rank: number,
   total: number,
+  /** True when I'm in this round's penalty set — not just when I'm dead last. */
+  isLoser: boolean,
   framesSinceLocked: number,
   fps: number,
   nowMs: number,
@@ -118,8 +120,10 @@ export function drawPersonalRankCard(
   const scale = easedT * breathe;
   const alpha = Math.min(1, animT * 1.6);
 
-  const isFirst = rank === 1;
-  const isLast = rank === total;
+  // 벌칙 여부가 1등/중간 표기보다 우선한다 — 벌칙 2~3명일 때 "4등 골인!" 같은
+  // 중립 카드를 띄우면 결과 화면에서 벌칙자로 뒤집혀 거짓말이 된다.
+  const isFirst = rank === 1 && !isLoser;
+  const isLast = isLoser;
   const isMid = !isFirst && !isLast;
 
   // Tier styling — flat solid color per tier (gradients removed).
@@ -202,12 +206,16 @@ export function drawLoserBanner(
   dpr: number,
   W: number,
   H: number,
-  loserNick: string,
-  loserColor: string,
+  /** Every loser this round, worst first. One entry keeps the original single-name look. */
+  losers: { nickname: string; color: string }[],
   framesSinceDecided: number,
   fps: number,
   nowMs: number,
 ) {
+  const n = losers.length;
+  if (n === 0) return;
+  const loserNick = losers[0].nickname;
+  const loserColor = losers[0].color;
   // Swoop down from above with a bouncy ease, then breathe with a soft pulse.
   const animT = Math.min(1, Math.max(0, framesSinceDecided / Math.max(1, fps * 0.55)));
   if (animT <= 0) return;
@@ -219,9 +227,12 @@ export function drawLoserBanner(
   const breathe = 1 + 0.025 * Math.sin(nowMs * 0.005);
 
   // Width = measure nickname + penalty icon + comfortable padding, capped to viewport.
+  // Multiple losers stack as lines, so the name shrinks and the banner grows.
   const cx = W / 2;
   const cy = H * 0.6 + slideY;
-  const bannerH = 138 * dpr;
+  const nameSize = (n === 1 ? 44 : n === 2 ? 34 : 28) * dpr;
+  const lineH = nameSize * 1.2;
+  const bannerH = n === 1 ? 138 * dpr : 56 * dpr + n * lineH;
   const cornerR = 20 * dpr;
 
   ctx.save();
@@ -230,9 +241,11 @@ export function drawLoserBanner(
   ctx.scale(breathe, breathe);
   ctx.translate(-cx, -cy);
 
-  // Compute width based on text content
-  ctx.font = `bold ${44 * dpr}px sans-serif`;
-  const nickW = ctx.measureText(`🎯 ${loserNick}`).width;
+  // Compute width based on the widest line
+  ctx.font = `bold ${nameSize}px sans-serif`;
+  const nickW = Math.max(
+    ...losers.map((l) => ctx.measureText(n === 1 ? `🎯 ${l.nickname}` : l.nickname).width),
+  );
   const bannerW = Math.min(W * 0.92, Math.max(360 * dpr, nickW + 96 * dpr));
   const left = cx - bannerW / 2;
   const top = cy - bannerH / 2;
@@ -254,8 +267,9 @@ export function drawLoserBanner(
   roundRectPath(ctx, left, top, bannerW, bannerH, cornerR);
   ctx.stroke();
 
-  // Top "꼴찌 결정!" badge — uses the loser's marble color so they're visually tagged
-  const badgeText = ko.game.loserRevealedBadge;
+  // Top "꼴찌 결정!" badge — uses the loser's marble color so they're visually tagged.
+  // With several losers the count goes in the badge instead of a single-loser claim.
+  const badgeText = n === 1 ? ko.game.loserRevealedBadge : ko.game.loserRevealedBadgeN(n);
   ctx.font = `bold ${13 * dpr}px sans-serif`;
   const badgeTextW = ctx.measureText(badgeText).width;
   const badgePadX = 12 * dpr;
@@ -278,20 +292,34 @@ export function drawLoserBanner(
   ctx.textBaseline = 'middle';
   ctx.fillText(badgeText, cx, badgeY + badgeH / 2 + 1 * dpr);
 
-  // Main line: 🎯 + nickname, big & bold with dark outline for punch
-  ctx.font = `bold ${44 * dpr}px sans-serif`;
+  // Names: one big line for a single loser, otherwise a stacked roster with a
+  // color dot each so people can match a name to their own marble.
+  ctx.font = `bold ${nameSize}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = 5 * dpr;
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-  ctx.strokeText(`🎯 ${loserNick}`, cx, cy - 4 * dpr);
-  ctx.fillStyle = '#fff';
-  ctx.fillText(`🎯 ${loserNick}`, cx, cy - 4 * dpr);
+  const firstLineY = n === 1 ? cy - 4 * dpr : cy - 10 * dpr - ((n - 1) * lineH) / 2;
+  losers.forEach((l, i) => {
+    const y = firstLineY + i * lineH;
+    const text = n === 1 ? `🎯 ${loserNick}` : l.nickname;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.strokeText(text, cx, y);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, cx, y);
+    if (n === 1) return;
+    const dotR = nameSize * 0.18;
+    const dotX = cx - ctx.measureText(text).width / 2 - dotR * 2.2;
+    ctx.beginPath();
+    ctx.arc(dotX, y, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = l.color;
+    ctx.fill();
+  });
 
   // Subtitle
   ctx.font = `${16 * dpr}px sans-serif`;
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.fillText(ko.game.loserRevealedSub, cx, cy + 38 * dpr);
+  const subY = n === 1 ? cy + 38 * dpr : firstLineY + (n - 1) * lineH + lineH * 0.9;
+  ctx.fillText(ko.game.loserRevealedSub, cx, subY);
 
   ctx.restore();
 }

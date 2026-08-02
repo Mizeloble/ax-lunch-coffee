@@ -169,6 +169,7 @@ export default function RoomClient({
             seed: 0,
             startAt: round.startAt,
             durationMs: round.durationMs,
+            loserCount: round.loserCount,
             replay: round.replay,
             players: s.players.map((p) => ({
               playerToken: p.playerToken,
@@ -430,6 +431,7 @@ export default function RoomClient({
             key={effectiveStartAt}
             startAt={effectiveStartAt}
             durationMs={gameStart.durationMs}
+            loserCount={gameStart.loserCount}
             replay={gameStart.replay as SimulationResult}
             players={gameStart.players}
             myPlayerToken={myToken}
@@ -443,6 +445,7 @@ export default function RoomClient({
             key={effectiveStartAt}
             startAt={effectiveStartAt}
             intro={gameStart.replay as MarbleTiltIntroData}
+            loserCount={gameStart.loserCount}
             players={gameStart.players}
             myPlayerToken={myToken}
           />

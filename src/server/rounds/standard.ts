@@ -16,6 +16,7 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
   }
 
   const seed = (Math.random() * 0x7fffffff) | 0;
+  const loserCount = effectiveLoserCount(room.loserCount, connectedPlayers.length);
   const epoch = ++room.roundEpoch;
   // Mark as countdown immediately so a second click is ignored even while WASM loads
   room.status = 'countdown';
@@ -27,7 +28,7 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
       gameId: room.gameId,
       seed,
       players: connectedPlayers,
-      loserCount: effectiveLoserCount(room.loserCount, connectedPlayers.length),
+      loserCount,
       chargeRatios,
     });
   } catch (err) {
@@ -43,7 +44,7 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
   if (!getRoom(room.id) || room.status !== 'countdown' || room.roundEpoch !== epoch) return;
 
   const startAt = Date.now() + GAME.COUNTDOWN_MS;
-  room.currentRound = { gameId: room.gameId, seed, startAt, replay };
+  room.currentRound = { gameId: room.gameId, seed, startAt, loserCount, replay };
   touch(room);
   io.to(room.id).emit('state', publicRoomState(room));
   io.to(room.id).emit('countdown', { startAt });
@@ -52,6 +53,7 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
     seed,
     startAt,
     durationMs: replay.durationMs,
+    loserCount,
     replay: replay.data,
     players: connectedPlayers.map((p) => ({ playerToken: p.playerToken, nickname: p.nickname, color: p.color })),
   });

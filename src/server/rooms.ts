@@ -97,7 +97,14 @@ export type RoomState = {
   gameId: GameId; // selected game (default 'marble')
   loserCount: number; // 1..3
   players: Map<string, Player>; // keyed by playerToken
-  currentRound?: { gameId: GameId; seed: number; startAt: number; replay: ReplayPayload };
+  currentRound?: {
+    gameId: GameId;
+    seed: number;
+    startAt: number;
+    /** Effective penalty count this round ran with (post-clamp). */
+    loserCount: number;
+    replay: ReplayPayload;
+  };
   /**
    * Quiz question ids this room has already been served, per game. Lets a party
    * play several rounds without "아까 그거 또 나왔네" — the picker skips these.
@@ -386,6 +393,7 @@ export function publicRoomState(room: RoomState) {
           gameId: room.currentRound.gameId,
           startAt: room.currentRound.startAt,
           durationMs: room.currentRound.replay.durationMs,
+          loserCount: room.currentRound.loserCount,
           // Exposed for mid-play reconnects (reaction/quiz intro payloads are
           // answer-free by construction — see rounds/reaction.ts and rounds/quiz.ts).
           // For marble, `data` is large frame data — only include intro-only payloads.

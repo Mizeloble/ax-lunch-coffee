@@ -169,6 +169,7 @@ export const ko = {
     myRankSubMid: (total: number) => `총 ${total}명 중`,
     loserRevealed: (name: string) => name,
     loserRevealedBadge: '꼴찌 결정!',
+    loserRevealedBadgeN: (n: number) => `벌칙 ${n}명 결정!`,
     loserRevealedSub: '오늘 벌칙은 당신!',
   },
   result: {

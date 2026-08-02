@@ -33,6 +33,8 @@ export type MarbleTiltIntroData = {
 export type MarbleTiltRendererProps = {
   startAt: number;
   intro: MarbleTiltIntroData;
+  /** How many trailing finishers take the penalty this round (server-clamped). */
+  loserCount: number;
   players: { playerToken: string; nickname: string; color: string }[];
   myPlayerToken: string | null;
 };
@@ -56,7 +58,13 @@ const BOOST_COOLDOWN_MS = 800;
 const DISPLAY_FPS = 60;
 const TICK_INTERVAL_MS = 1000 / DISPLAY_FPS;
 
-export function MarbleTiltRenderer({ startAt, intro, players, myPlayerToken }: MarbleTiltRendererProps) {
+export function MarbleTiltRenderer({
+  startAt,
+  intro,
+  loserCount,
+  players,
+  myPlayerToken,
+}: MarbleTiltRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -65,6 +73,9 @@ export function MarbleTiltRenderer({ startAt, intro, players, myPlayerToken }: M
   const latestTickRef = useRef<LiveTick | null>(null);
   const finishedTicksRef = useRef<number[]>(new Array(intro.playerOrder.length).fill(-1));
   const finishOrderTokensRef = useRef<string[]>([]);
+  // Snapshot of the penalty set, frozen the tick it's decided. Recomputing it from
+  // "who hasn't finished" would shrink it as losers trickle in during the hold.
+  const loserTokensRef = useRef<string[]>([]);
   const totalTicksRef = useRef<number>(0);
   const doneAtRef = useRef<number | null>(null);
   // Boost flash effect: marble idx -> wall-clock when its boost was received.
@@ -365,16 +376,23 @@ export function MarbleTiltRenderer({ startAt, intro, players, myPlayerToken }: M
       const iAmLoserCandidate = myIdx === liveLoserIdx && !iAmFinished;
       const myYNow = myIdx >= 0 ? next[myIdx * 2 + 1] : liveLoserY;
 
-      // Fanfare on second-to-last finisher (loser-decided moment).
-      const expectedFinishers = totalPlayers - 1;
+      // Fanfare when the last *safe* player crosses — from then on everyone still
+      // running is a loser, so the whole penalty set is decided at that tick.
+      const nLosers = Math.max(1, Math.min(loserCount, totalPlayers - 1));
+      const expectedFinishers = totalPlayers - nLosers;
       const stlReached = finishOrderTokensRef.current.length >= expectedFinishers;
       const stlToken = stlReached ? finishOrderTokensRef.current[expectedFinishers - 1] : null;
       const stlIdx = stlToken ? intro.playerOrder.indexOf(stlToken) : -1;
       const loserDecidedTick = stlIdx >= 0 ? finishedTicksRef.current[stlIdx] : -1;
-      const loserToken = stlReached
-        ? intro.playerOrder.find((t) => !finishOrderTokensRef.current.includes(t)) ?? null
-        : null;
-      const loserIdx = loserToken ? intro.playerOrder.indexOf(loserToken) : -1;
+      if (stlReached && loserTokensRef.current.length === 0) {
+        loserTokensRef.current = intro.playerOrder.filter(
+          (t) => !finishOrderTokensRef.current.includes(t),
+        );
+      }
+      const loserTokens = loserTokensRef.current;
+      const iAmLoser = !!myPlayerToken && loserTokens.includes(myPlayerToken);
+      // Camera / burst focus stays on one marble; the banner names them all.
+      const loserIdx = loserTokens.length > 0 ? intro.playerOrder.indexOf(loserTokens[0]) : -1;
 
       // Spawn fanfare bursts once per crossing tick, mirroring the marble renderer.
       if (loserDecidedTick >= 0 && loserIdx >= 0) {
@@ -408,7 +426,7 @@ export function MarbleTiltRenderer({ startAt, intro, players, myPlayerToken }: M
         firedMyFinishHaptic = true;
         haptics.myFinish();
       }
-      if (!firedLoserHaptic && loserDecidedTick >= 0 && tickIdx >= loserDecidedTick && myIdx === loserIdx) {
+      if (!firedLoserHaptic && loserDecidedTick >= 0 && tickIdx >= loserDecidedTick && iAmLoser) {
         firedLoserHaptic = true;
         haptics.loserConfirmed();
       }
@@ -492,22 +510,24 @@ export function MarbleTiltRenderer({ startAt, intro, players, myPlayerToken }: M
 
       drawLeaderboard(ctx, dpr, W, H, fauxReplay, next, tickIdx, playerByToken, myPlayerToken);
 
-      if (loserDecidedTick >= 0 && tickIdx >= loserDecidedTick && loserIdx >= 0) {
-        const loserNick = playerByToken.get(intro.playerOrder[loserIdx])?.nickname ?? '';
-        const loserColor = playerByToken.get(intro.playerOrder[loserIdx])?.color ?? '#fbbf24';
-        drawLoserBanner(ctx, dpr, W, H, loserNick, loserColor, tickIdx - loserDecidedTick, DISPLAY_FPS, now);
+      if (loserDecidedTick >= 0 && tickIdx >= loserDecidedTick && loserTokens.length > 0) {
+        const entries = loserTokens.map((tk) => ({
+          nickname: playerByToken.get(tk)?.nickname ?? '',
+          color: playerByToken.get(tk)?.color ?? '#fbbf24',
+        }));
+        drawLoserBanner(ctx, dpr, W, H, entries, tickIdx - loserDecidedTick, DISPLAY_FPS, now);
       }
 
-      // Personal rank card: locked when MY marble crosses, or when the loser is
-      // decided (if I'm the loser, since I never cross).
-      const myFinishLockedTick =
-        myIdx < 0 ? -1 : myIdx === loserIdx ? loserDecidedTick : myFinishTick;
-      const myRank = myPlayerToken
+      // Personal rank card: locked when MY marble crosses, or — if I'm one of the
+      // losers — at the reveal (dead last never crosses, so it has no rank yet).
+      const myFinishLockedTick = myIdx < 0 ? -1 : iAmLoser ? loserDecidedTick : myFinishTick;
+      const finishedRank = myPlayerToken
         ? finishOrderTokensRef.current.indexOf(myPlayerToken) + 1
         : 0;
+      const myRank = finishedRank > 0 ? finishedRank : iAmLoser ? totalPlayers : 0;
       if (myFinishLockedTick >= 0 && tickIdx >= myFinishLockedTick && myRank > 0) {
         drawPersonalRankCard(
-          ctx, dpr, W, H, myRank, totalPlayers, tickIdx - myFinishLockedTick, DISPLAY_FPS, now,
+          ctx, dpr, W, H, myRank, totalPlayers, iAmLoser, tickIdx - myFinishLockedTick, DISPLAY_FPS, now,
         );
       }
 

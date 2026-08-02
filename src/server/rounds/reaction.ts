@@ -29,6 +29,7 @@ export async function runReactionRound(io: IO, room: RoomState) {
     return;
   }
 
+  const loserCount = effectiveLoserCount(room.loserCount, connectedPlayers.length);
   const startAt = Date.now() + GAME.COUNTDOWN_MS;
   const goAt = startAt + intro.goAtOffsetMs;
   const deadlineAt = goAt + GAME.REACTION_DEADLINE_MS;
@@ -47,7 +48,7 @@ export async function runReactionRound(io: IO, room: RoomState) {
     // broadcast, which would leak the GO time before it fires.
     data: { offsets: {} as Record<string, number | null> },
   };
-  room.currentRound = { gameId: 'reaction', seed, startAt, replay: introReplay };
+  room.currentRound = { gameId: 'reaction', seed, startAt, loserCount, replay: introReplay };
 
   // Schedule final result computation. Stored on room so reset() can cancel it.
   const finishTimer = setTimeout(async () => {
@@ -75,7 +76,7 @@ export async function runReactionRound(io: IO, room: RoomState) {
         gameId: 'reaction',
         seed,
         players: connectedPlayers,
-        loserCount: effectiveLoserCount(room.loserCount, connectedPlayers.length),
+        loserCount,
         tapOffsets,
       });
     } catch (err) {
@@ -92,7 +93,7 @@ export async function runReactionRound(io: IO, room: RoomState) {
     // overwrite with absolute wall-clock and carry tapOffsets through so the
     // result screen can show each player's reaction time.
     replay.data = { goAt, deadlineAt, offsets: tapOffsets };
-    room.currentRound = { gameId: 'reaction', seed, startAt, replay };
+    room.currentRound = { gameId: 'reaction', seed, startAt, loserCount, replay };
     clearReaction(room);
     room.status = 'result';
     io.to(room.id).emit('state', publicRoomState(room));
@@ -118,6 +119,7 @@ export async function runReactionRound(io: IO, room: RoomState) {
     seed: 0,
     startAt,
     durationMs: intro.durationMs,
+    loserCount,
     // offsets stays empty here — populated on the post-round state broadcast.
     // No goAt/deadlineAt: the GO time arrives via `reaction:go` when it fires.
     replay: { offsets: {} as Record<string, number | null> },
