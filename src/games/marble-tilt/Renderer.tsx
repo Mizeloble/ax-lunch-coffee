@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ko } from '@/lib/i18n';
 import { getSocket } from '@/lib/socket-client';
+import { serverNow } from '@/lib/server-clock';
 import { haptics } from '@/games/marble/haptics';
 import type { SimulationResult, StaticEntity } from '@/games/marble/sim';
 import { CAMERA_EASE_RATE, INSET_FADE_RATE, ZOOM_THRESHOLD } from '@/games/marble/render/constants';
@@ -157,7 +158,7 @@ export function MarbleTiltRenderer({
   // makes during the 3-second countdown would bake into the zero point and
   // bias the marble to one side once the race starts.
   useEffect(() => {
-    const delay = Math.max(0, startAt - Date.now() - 200);
+    const delay = Math.max(0, startAt - serverNow() - 200);
     const t = setTimeout(() => tare(), delay);
     return () => clearTimeout(t);
   }, [startAt, tare]);
@@ -165,6 +166,8 @@ export function MarbleTiltRenderer({
   const triggerBoost = useCallback(() => {
     if (!tiltActiveRef.current) return; // pre-race / post-finish guard
     if (boostBudget <= 0) return;
+    // Local clock throughout the cooldown: `boostCooldownAt` is set from this same
+    // clock just below, so it never compares against a server stamp.
     const now = Date.now();
     if (now < boostCooldownAt) return;
     setBoostBudget((b) => b - 1);
@@ -303,7 +306,7 @@ export function MarbleTiltRenderer({
       // Activate tilt emission only when we're actually in playing-after-startAt.
       // Renderer mounts during countdown — emitting tilt before sim.start() on
       // the server is harmless but pointless.
-      const hasStarted = Date.now() >= startAt;
+      const hasStarted = serverNow() >= startAt;
       tiltActiveRef.current = hasStarted && !doneAtRef.current && myIdx >= 0;
 
       // Wait for first tick before drawing live positions.

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { ko } from '@/lib/i18n';
 import { getSocket } from '@/lib/socket-client';
+import { serverNow } from '@/lib/server-clock';
 import { haptics } from '@/games/marble/haptics';
 import { GAME } from '@/lib/constants';
 import { GAME_META, type GameId } from '@/games/types';
@@ -51,7 +52,7 @@ export function TriviaRenderer({
   players: Player[];
   myPlayerToken: string | null;
 }) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => serverNow());
   const [myAnswers, setMyAnswers] = useState<Array<0 | 1 | 2 | 3 | null>>(() =>
     Array.from({ length: replay.questions.length }, () => null),
   );
@@ -91,7 +92,7 @@ export function TriviaRenderer({
   useEffect(() => {
     let raf = 0;
     const loop = () => {
-      setNow(Date.now());
+      setNow(serverNow());
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -226,7 +227,7 @@ export function TriviaRenderer({
     if (myAnswers[qIndex] != null) return;
     if (phase.kind !== 'question' || phase.qIndex !== qIndex) return;
 
-    const offset = Math.max(0, Date.now() - phase.openAt);
+    const offset = Math.max(0, serverNow() - phase.openAt);
     setMyAnswers((prev) => {
       if (prev[qIndex] != null) return prev;
       const next = prev.slice();

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
 import { getSocket, disposeSocket } from '@/lib/socket-client';
+import { serverNow, syncServerClock } from '@/lib/server-clock';
 import { useWakeLock } from '@/lib/useWakeLock';
 import { loadIdentity, saveIdentity } from '@/lib/nickname-store';
 import {
@@ -225,6 +226,9 @@ export default function RoomClient({
     }
     let slowTimer: ReturnType<typeof setTimeout> | null = null;
     function onConnect() {
+      // Re-measure the clock offset on every connect, not just the first: a phone
+      // that slept through a reconnect is exactly when its clock may have moved.
+      void syncServerClock(socket);
       setConnectionLost(false);
       setRestarting(false);
       setSlowReconnect(false);
@@ -246,6 +250,9 @@ export default function RoomClient({
       setRestarting(true);
     }
     socket.on('connect', onConnect);
+    // Already connected when this mounts (singleton socket surviving a route
+    // change) → `connect` won't fire again, so kick off the first sync here.
+    if (socket.connected) void syncServerClock(socket);
     socket.on('disconnect', onDisconnect);
     socket.on('server:shutdown', onServerShutdown);
 
@@ -345,7 +352,7 @@ export default function RoomClient({
 
   // In-room rendering
   const effectiveStartAt = replayStartAt ?? gameStart?.startAt ?? 0;
-  const showCountdown = !!gameStart && Date.now() < effectiveStartAt + 200;
+  const showCountdown = !!gameStart && serverNow() < effectiveStartAt + 200;
   const inCharging = state?.status === 'charging';
   const inResult = state?.status === 'result';
   const replayPlayed = !!gameStart;
@@ -376,7 +383,7 @@ export default function RoomClient({
     (state?.status === 'countdown' || state?.status === 'playing') && !showGame;
 
   function handleReplay() {
-    setReplayStartAt(Date.now() + UI.REPLAY_LEAD_MS);
+    setReplayStartAt(serverNow() + UI.REPLAY_LEAD_MS);
     setResultAcked(false);
   }
 

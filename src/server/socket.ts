@@ -233,6 +233,14 @@ export function attachSocketHandlers(io: IO) {
       }
     });
 
+    // Clock sync probe. Cheap enough to answer unconditionally (one Date.now()),
+    // and it must work before `join` — the client corrects its clock on connect
+    // so the very first countdown it renders is already aligned.
+    socket.on('time:sync', (ack) => {
+      if (hotLimited(socket, 'time')) return;
+      ack?.(Date.now());
+    });
+
     socket.on('charge:tick', (payload) => {
       if (hotLimited(socket, 'charge')) return;
       const room = currentRoomId ? getRoom(currentRoomId) : null;

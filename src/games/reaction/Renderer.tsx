@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ko } from '@/lib/i18n';
 import { getSocket } from '@/lib/socket-client';
+import { serverNow } from '@/lib/server-clock';
 import { haptics } from '@/games/marble/haptics';
 import { GAME } from '@/lib/constants';
 import type { ReactionGoPayload, ReactionTapAck } from '@/lib/protocol';
@@ -39,7 +40,7 @@ export function ReactionRenderer({
   players: Player[];
   myPlayerToken: string | null;
 }) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => serverNow());
   // Local snapshot of "my reaction time" — server is authoritative for ranking but we
   // surface this immediately so the user sees their effort acknowledged.
   const [myOffsetMs, setMyOffsetMs] = useState<number | null>(null);
@@ -54,7 +55,7 @@ export function ReactionRenderer({
   useEffect(() => {
     let raf = 0;
     const loop = () => {
-      setNow(Date.now());
+      setNow(serverNow());
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -67,7 +68,7 @@ export function ReactionRenderer({
   // No haptic fires on GO itself (iOS Safari lacks navigator.vibrate, so a GO
   // pulse would advantage Android players).
   useEffect(() => {
-    const now = Date.now();
+    const now = serverNow();
     const timers = [400, 800, 1200]
       .map((off) => startAt + off)
       .filter((fireAt) => fireAt > now + 50)
@@ -79,7 +80,7 @@ export function ReactionRenderer({
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     if (tappedRef.current) return;
     tappedRef.current = true;
-    const tapAt = Date.now();
+    const tapAt = serverNow();
 
     // No GO signal yet (or tapped before it): false start. A tap racing the GO
     // packet over the wire can still be recorded as valid by the server — the

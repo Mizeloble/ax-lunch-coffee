@@ -9,6 +9,11 @@
 ## 호스트 식별
 `hostToken`(서버 발급) 일치 + 현재 소켓이 `room.hostSocketId`와 동일할 때만 호스트 권한 동작.
 
+## 시계
+모든 페이즈는 서버 wall-clock 스탬프(`startAt`·`goAt`/`deadlineAt`·퀴즈 스케줄·`endsAt`)에 걸려 있고 클라가 자기 시계와 비교해 그린다. 그래서 클라는 접속할 때마다 `time:sync` 왕복으로 오프셋을 재고(`src/lib/server-clock.ts`), 서버 스탬프와 비교하는 자리엔 `Date.now()` 대신 `serverNow()`를 쓴다 — 자기들끼리만 비교하는 로컬 간격(쿨다운·스로틀)은 그대로 로컬 시계다.
+
+새 타이밍 값을 클라로 보낼 때 이 규칙을 깨지 말 것. 다만 **오프셋은 표시용일 뿐** — 클라가 보낸 시각을 결과에 반영하지 않는다는 원칙은 그대로다(payload에 timestamp 금지).
+
 ## 라운드 중 재접속
 폰 잠금·탭 폐기로 **풀 리로드**한 클라는 `game:start`를 놓친다. 그래서 `publicRoomState`의 `currentRound`는 라운드를 재구성할 수 있을 만큼을 담는다 — `exposesReplayData`가 true인 게임(reaction·quiz·live-marble)은 intro까지 실어 보내고, 클라(`RoomClient`)가 이걸로 `gameStart`를 복원한다. precompute 마블은 프레임이 수 MB라 제외 — 그쪽은 로비 대신 "진행 중" 대기 화면을 보여준다.
 

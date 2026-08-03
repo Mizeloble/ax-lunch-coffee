@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { ko } from '@/lib/i18n';
+import { serverNow } from '@/lib/server-clock';
 import { haptics } from './haptics';
 import type { SimulationResult } from './sim';
 import { CAMERA_EASE_RATE, INSET_FADE_RATE, ZOOM_THRESHOLD } from './render/constants';
@@ -161,7 +162,7 @@ export function MarbleRenderer({
       const dtSec = Math.max(0, Math.min(0.05, (now - lastT) / 1000));
       lastT = now;
 
-      const elapsed = Math.max(0, Date.now() - startAt);
+      const elapsed = Math.max(0, serverNow() - startAt);
       const frameF = elapsedToFrameF(elapsed, cumMs, frameDurations, totalFrames);
       const idx = Math.min(totalFrames - 1, Math.max(0, Math.floor(frameF)));
       const tFrac = Math.min(1, Math.max(0, frameF - idx));

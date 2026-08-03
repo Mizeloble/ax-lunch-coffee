@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { ko } from '@/lib/i18n';
 import { GAME } from '@/lib/constants';
 import { getSocket } from '@/lib/socket-client';
+import { serverNow } from '@/lib/server-clock';
 import { haptics } from '@/games/marble/haptics';
 import { useRoomStore } from '@/store/room-store';
 
@@ -26,7 +27,7 @@ export function ChargePhase() {
 
   const [startEndsAt, setStartEndsAt] = useState<number | null>(null);
   const endsAt = startEndsAt ?? stateEndsAt;
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => serverNow());
   const [myCount, setMyCount] = useState(0);
   const [serverTotals, setServerTotals] = useState<Record<string, number>>({});
   const [cap, setCap] = useState<number>(GAME.CHARGE_TAP_CAP);
@@ -63,7 +64,7 @@ export function ChargePhase() {
   useEffect(() => {
     let raf = 0;
     const loop = () => {
-      setNow(Date.now());
+      setNow(serverNow());
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -71,7 +72,7 @@ export function ChargePhase() {
   }, []);
 
   function handleTap() {
-    if (!endsAt || Date.now() > endsAt) return;
+    if (!endsAt || serverNow() > endsAt) return;
     if (myCountRef.current >= cap) return;
     const next = myCountRef.current + 1;
     myCountRef.current = next;
@@ -80,7 +81,9 @@ export function ChargePhase() {
     haptics.chargeTap();
 
     // Throttle outgoing ticks; cumulative value is idempotent so dropped intermediate
-    // packets don't matter as long as the latest gets through.
+    // packets don't matter as long as the latest gets through. Local clock on
+    // purpose — this measures an interval between two of our own sends, so a clock
+    // offset would cancel out anyway and correcting it buys nothing.
     const t = Date.now();
     if (t - lastSentRef.current >= TICK_THROTTLE_MS && next !== lastSentValRef.current) {
       lastSentRef.current = t;

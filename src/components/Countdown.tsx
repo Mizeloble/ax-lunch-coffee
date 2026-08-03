@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { ko } from '@/lib/i18n';
 import { haptics } from '@/games/marble/haptics';
 import { UI } from '@/lib/constants';
+import { serverNow } from '@/lib/server-clock';
 
 const { FLASH_MS, SPRING_MS } = UI;
 
 export function Countdown({ startAt }: { startAt: number }) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => serverNow());
   const lastTickRef = useRef<number | null>(null);
   const goFiredRef = useRef(false);
   // Wall-clock when the current displayed integer first appeared (for spring)
@@ -17,7 +18,7 @@ export function Countdown({ startAt }: { startAt: number }) {
   useEffect(() => {
     let raf = 0;
     const loop = () => {
-      setNow(Date.now());
+      setNow(serverNow());
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);

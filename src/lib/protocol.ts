@@ -179,6 +179,9 @@ export type ClientToServerEvents = {
     payload: { roomId: string; nickname: string; playerToken?: string; hostToken?: string },
     ack: (res: JoinAck) => void,
   ) => void;
+  /** Clock sync probe: ack carries the server's `Date.now()`. Display-only —
+   * the client uses it to correct its own clock, never to assert timing. */
+  'time:sync': (ack: (serverTime: number) => void) => void;
   setLoserCount: (payload: { count: number }) => void;
   setGameId: (payload: { gameId: GameId }) => void;
   start: () => void;
