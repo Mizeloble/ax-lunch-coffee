@@ -47,6 +47,16 @@ export const GAME = {
   CHARGE_TAP_CAP: 50,
   /** Default charge ratio for manual (no-phone) players. */
   CHARGE_MANUAL_DEFAULT: 0.5,
+  /**
+   * Post-endsAt buffer before charge totals are frozen — the reaction game's
+   * REACTION_TAIL_MS for the same reason. Clients throttle tap packets and send a
+   * final cumulative flush the moment their countdown hits 0, so that flush is
+   * *always* in flight when the window closes; without a tail it landed after
+   * `clearCharge` and every tap since the last throttled send was lost (worst for
+   * players on slow connections). The displayed countdown still ends at endsAt —
+   * this only widens what the server accepts.
+   */
+  CHARGE_TAIL_MS: 600,
   /** Reaction game: minimum offset before "GO!" before the goAt mark. */
   REACTION_PRE_GO_MIN_MS: 1500,
   /** Reaction game: maximum offset before "GO!". seed picks deterministically in [MIN, MAX]. */

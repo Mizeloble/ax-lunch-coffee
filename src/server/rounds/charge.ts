@@ -37,7 +37,12 @@ export function startChargingPhase(io: IO, room: RoomState) {
     }
 
     await runRound(io, room, chargeRatios);
-  }, GAME.CHARGE_MS);
+    // Totals freeze a beat *after* the countdown ends so the clients' final
+    // cumulative flush — always in flight at endsAt — still counts. `charge:tick`
+    // itself needs no deadline check: it only requires `room.charge`, which this
+    // timer is what clears. Tapping stops at endsAt client-side (the button
+    // disables), so the extra window admits packets, not extra taps.
+  }, GAME.CHARGE_MS + GAME.CHARGE_TAIL_MS);
 
   room.charge = { endsAt, counts: new Map(), tickTimer, finishTimer };
   touch(room);
