@@ -46,6 +46,8 @@ export type ReactionState = {
   deadlineAt: number;
   /** playerToken -> first-tap server-arrival offset (ms relative to goAt; negative = false start). */
   firstTaps: Map<string, number>;
+  /** Tokens snapshotted when the round started — the only ones whose taps can place. */
+  participants: Set<string>;
   finishTimer: NodeJS.Timeout;
   /** Fires the `reaction:go` broadcast at goAt — the GO time is never pre-announced. */
   goTimer: NodeJS.Timeout;

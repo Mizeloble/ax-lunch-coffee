@@ -1418,12 +1418,32 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
 const EXCLUSIVE_GROUPS: Readonly<Record<string, readonly string[]>> = {
   // "거꾸로 읽어도 똑같은 X는?" — 하나 공개되면 나머지는 보기에서 회문 찾기가 된다.
   palindrome: ['pun-e-palindrome-tomato', 'pun-e-palindrome-goose', 'pun-e-palindrome-swiss'],
-  // "X가 크게 웃으면?" 동일 템플릿.
-  'laugh-template': ['pun-laughing-cow', 'pun-a-radish-laugh', 'pun-a-sheep-yes'],
+  // "X가 크게 웃으면?" 동일 템플릿. (빵긋도 같은 문형 — id만 보고는 안 보여서 빠져 있었다)
+  'laugh-template': [
+    'pun-laughing-cow',
+    'pun-a-radish-laugh',
+    'pun-a-sheep-yes',
+    'pun-a-bread-greeting',
+  ],
   // "X가 길을 잃으면?" 동일 템플릿 + 보기 3개(길치·마마보이·미아) 공유.
   'lost-template': ['pun-dad-lost', 'pun-d-uncle-job'],
   // 수건·걸레·비누 — "닦을수록/씻을수록/말리며" 계열에 서로가 서로의 오답으로 등장.
   'towel-rag-soap': ['logic-b-wet-while-drying', 'pun-c-dirty-clean', 'mix-a-soap-thin'],
+  // "정답은 실제 견종이 아니라 -개로 끝나는 단어" 트릭이 한 번 공개되면 나머지는
+  // 보기에서 견종을 지우기만 하면 풀린다. 오답 3개(진돗개·삽살개·풍산개)도 공유.
+  'dog-suffix': ['pun-c-king-fall', 'wit-b-hot-dog', 'pun-c-meat-dog'],
+  // "X가 좋아하는/싫어하는 도시는?" + 도시명 동음이의 — 앞 둘은 오답(뉴욕·런던)도 공유.
+  'city-pun': ['pun-b-baker-city', 'pun-g-veg-city-sydney', 'pun-g-drinker-city-cheongju'],
+  // "세상에서 가장 빠른 X는?" + "X로 끝나는 의태어" 동일 기법.
+  'fastest-template': ['pun-fast-chicken', 'pun-c-coldest-sea', 'pun-c-grape-laugh'],
+  // 음료 3형제 — 보기 3개를 공유하고 judge의 정답이 angry의 오답이라 서로를 소거한다.
+  'drink-pun': ['pun-b-judge-drink', 'wit-b-angry-drink', 'pun-a-horse-tea'],
+  // "가장 추운/뜨거운 바다" — 반대 형용사에 "정답만 실제 바다가 아님"이라는 같은 트릭.
+  'sea-temp': ['pun-cold-sea', 'pun-g-hottest-sea'],
+  // "X가 자기소개를 하면?" 문자 그대로 같은 템플릿.
+  'self-intro': ['pun-c-crane-intro', 'pun-f-gentleman-intro'],
+  // 양초 소재 클러스터 — 보기는 안 겹치지만 소재가 같아 김이 빠진다(trivia의 newton/pyramid 선례).
+  candle: ['pun-c-candle-cry', 'logic-fire-first', 'wit-candle-blow'],
 };
 
 /** id → 속한 묶음 이름들. */

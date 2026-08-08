@@ -108,7 +108,14 @@ export async function runReactionRound(io: IO, room: RoomState) {
     io.to(room.id).emit('reaction:go', { goAt, deadlineAt });
   }, goAt - Date.now());
 
-  room.reaction = { goAt, deadlineAt, firstTaps: new Map(), finishTimer, goTimer };
+  room.reaction = {
+    goAt,
+    deadlineAt,
+    firstTaps: new Map(),
+    participants: new Set(connectedPlayers.map((p) => p.playerToken)),
+    finishTimer,
+    goTimer,
+  };
   touch(room);
   io.to(room.id).emit('state', publicRoomState(room));
   io.to(room.id).emit('countdown', { startAt });

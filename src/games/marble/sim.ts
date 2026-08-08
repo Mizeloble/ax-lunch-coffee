@@ -112,6 +112,12 @@ export function spawnMarbles(
 export async function simulateRace(
   seed: number,
   players: { playerToken: string }[],
+  /**
+   * How many trailing finishers take the penalty. The race stops the moment the
+   * set is decided (see the exit condition in `runSimulation`), so this changes
+   * how long the replay runs — pass the same clamped value the result uses.
+   */
+  loserCount = 1,
   chargeRatios?: Record<string, number>,
 ): Promise<SimulationResult> {
   const rng = mulberry32(seed);
@@ -123,7 +129,15 @@ export async function simulateRace(
   const physics = new Box2dPhysics(rng);
   await physics.init();
   try {
-    return await runSimulation(physics, players, rng, tieRng, pickStage(seed), chargeRatios);
+    return await runSimulation(
+      physics,
+      players,
+      rng,
+      tieRng,
+      pickStage(seed),
+      loserCount,
+      chargeRatios,
+    );
   } finally {
     // Free the world + all WASM-heap allocations — the box2d module is shared
     // across sims, so skipping this leaks a full race's bodies every round.
@@ -137,9 +151,14 @@ async function runSimulation(
   rng: () => number,
   tieRng: () => number,
   stage: StageDef,
+  loserCount: number,
   chargeRatios?: Record<string, number>,
 ): Promise<SimulationResult> {
   physics.createStage(stage);
+
+  // Mirror the server's `effectiveLoserCount`: someone always survives, so the
+  // exit threshold below can never reach zero (which would end the race on frame 0).
+  const safeLoserCount = Math.max(1, Math.min(loserCount, players.length - 1));
 
   const ratios = spawnMarbles(physics, players, rng, chargeRatios);
 
@@ -228,9 +247,14 @@ async function runSimulation(
     frames.push(snap);
     frameIdx++;
 
-    // Stop as soon as N-1 finish — the loser is mathematically decided at that moment,
-    // and watching them crawl across the line afterward is anticlimactic.
-    if (finishedSet.size >= players.length - 1) break;
+    // Stop as soon as the last safe player crosses — from that moment everyone
+    // still running is a loser, so nothing is left to decide and watching them
+    // crawl across the line is anticlimactic. This is the same threshold the live
+    // tilt runner uses (`liveSim.ts`), and it's what the renderer's reveal keys
+    // off: leaving it at N-1 while the reveal moved to "set decided" left up to
+    // 14 seconds of racing playing out underneath a banner that already named
+    // the losers.
+    if (finishedSet.size >= players.length - safeLoserCount) break;
 
     // Yield to the event loop once per simulated second. The whole sim is a tight
     // synchronous CPU loop (hundreds of ms for a full race); without this it blocks
@@ -240,8 +264,8 @@ async function runSimulation(
   }
 
   // Stragglers ranked by how far they got (higher y = closer to goal). With the
-  // N-1 exit above, this is normally just the loser — appended once so finishOrder
-  // is complete.
+  // exit above, this is normally exactly the penalty set — appended once so
+  // finishOrder is complete.
   if (finishedSet.size < players.length) {
     const lastFrame = frames[frames.length - 1];
     const remaining: { idx: number; y: number; key: number }[] = [];

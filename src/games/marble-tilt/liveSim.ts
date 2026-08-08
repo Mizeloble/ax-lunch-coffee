@@ -77,6 +77,9 @@ export type LiveTickPayload = {
   t: number;
   positions: number[];
   finished?: number[];
+  /** Authoritative finish order so far (marble indices, best first); the complete
+   *  ranking once the race ends. Clients mirror this instead of inferring it. */
+  order?: number[];
   /** Marble indices boosted this tick — clients show one-shot visual on them. */
   boosted?: number[];
   done?: boolean;
@@ -111,6 +114,10 @@ export class MarbleTiltLiveSim {
   // Finishing state.
   private finishedSet = new Set<number>();
   private finishOrder: string[] = [];
+  /** Same order as `finishOrder`, as marble indices — this is what goes on the wire. */
+  private finishOrderIdx: number[] = [];
+  /** Complete ranking (finishers + stragglers) once the race ends. */
+  private finalOrderIdx: number[] | null = null;
   private frozenPositions = new Map<number, { x: number; y: number }>();
 
   private goalY = 0;
@@ -216,6 +223,11 @@ export class MarbleTiltLiveSim {
   /** Try to apply a boost impulse for the given player. Returns true if applied
    *  (caller can use this for ack/UI sync). Silent no-op if budget exhausted,
    *  cooldown still active, marble already finished, or race not in progress. */
+  /** Boosts this player has left. Authoritative — the client mirrors it via ack. */
+  boostsLeft(playerToken: string): number {
+    return this.boostBudget.get(playerToken) ?? BOOST_BUDGET_MAX;
+  }
+
   tryBoost(playerToken: string): boolean {
     if (this.raceEndedAtMs > 0) return false;
     if (!this.physics) return false;
@@ -348,6 +360,7 @@ export class MarbleTiltLiveSim {
       if (p.y > this.goalY) {
         this.finishedSet.add(i);
         this.finishOrder.push(this.players[i].playerToken);
+        this.finishOrderIdx.push(i);
         this.frozenPositions.set(i, { x: p.x, y: this.goalY + 0.5 });
         this.physics.removeMarble(i);
         finishedThisTick.push(i);
@@ -385,6 +398,9 @@ export class MarbleTiltLiveSim {
       isDoneTick;
     if (shouldEmit) {
       const payload: LiveTickPayload = { t: this.tickIndex, positions };
+      // Always on the wire — a client that reloaded mid-race has no finish history
+      // of its own, and one that missed a tick would otherwise under-count.
+      payload.order = (this.finalOrderIdx ?? this.finishOrderIdx).slice();
       if (finishedThisTick.length > 0) payload.finished = finishedThisTick;
       if (hasBoost) {
         payload.boosted = [...this.pendingBoosts];
@@ -416,7 +432,7 @@ export class MarbleTiltLiveSim {
    * Called once at race end.
    */
   private computeFinalResult(): { ranking: string[]; losers: string[] } {
-    const finishOrder = this.finishOrder.slice();
+    const orderIdx = this.finishOrderIdx.slice();
     if (this.finishedSet.size < this.players.length && this.physics) {
       const remaining: { idx: number; y: number }[] = [];
       for (let i = 0; i < this.players.length; i++) {
@@ -426,8 +442,13 @@ export class MarbleTiltLiveSim {
         remaining.push({ idx: i, y: p.y });
       }
       remaining.sort((a, b) => b.y - a.y);
-      for (const r of remaining) finishOrder.push(this.players[r.idx].playerToken);
+      for (const r of remaining) orderIdx.push(r.idx);
     }
+    // Publish the complete ranking on the wire too: it's what lets clients that
+    // joined late — or a race that ended on the 60s timeout, where nobody may
+    // have finished at all — still stage the right losers.
+    this.finalOrderIdx = orderIdx;
+    const finishOrder = orderIdx.map((i) => this.players[i].playerToken);
     const losers = finishOrder.slice(-this.loserCount);
     return { ranking: finishOrder, losers };
   }

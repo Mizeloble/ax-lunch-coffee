@@ -69,6 +69,9 @@ export const GAME = {
   REACTION_TAIL_MS: 600,
   /** Trivia game: number of questions per round. */
   TRIVIA_QUESTION_COUNT: 5,
+  /** Extra unseen questions the shuffle bag keeps in reserve before wrapping —
+   *  covers a tail that's unusable because its members exclude each other. */
+  TRIVIA_WRAP_MARGIN: 4,
   /** Trivia game: maximum time window per question (read + answer). When all
    * connected non-manual players answer earlier, the server short-circuits and
    * advances immediately, so this is the upper bound — typical play is faster. */

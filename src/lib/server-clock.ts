@@ -53,18 +53,19 @@ type SyncSocket = {
  */
 export async function syncServerClock(socket: SyncSocket): Promise<void> {
   let bestRtt = Number.POSITIVE_INFINITY;
-  let bestOffset: number | null = null;
 
   for (let i = 0; i < PROBES; i++) {
     const sample = await probe(socket);
     if (!sample) continue;
-    if (sample.rtt < bestRtt) {
-      bestRtt = sample.rtt;
-      bestOffset = sample.offset;
-    }
+    if (sample.rtt >= bestRtt || !Number.isFinite(sample.offset)) continue;
+    bestRtt = sample.rtt;
+    // Apply as we go rather than after all five probes. `join` completes in one
+    // round trip, so a client that reloaded mid-round is already rendering the
+    // round by probe 2 — holding the correction back until probe 5 left exactly
+    // the reconnect case running on an uncorrected clock, which is the case this
+    // whole mechanism exists for. Later probes only refine it.
+    offsetMs = sample.offset;
   }
-
-  if (bestOffset !== null && Number.isFinite(bestOffset)) offsetMs = bestOffset;
 }
 
 function probe(socket: SyncSocket): Promise<{ rtt: number; offset: number } | null> {

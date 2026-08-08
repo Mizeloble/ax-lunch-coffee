@@ -158,6 +158,31 @@ describe('nonsense sibling families', () => {
       }
     }
   });
+
+  // trivia에는 있고 nonsense엔 없던 게이트. 형제 배제가 붙으면 "미출제 5개 남음"이
+  // "5개 다 쓸 수 있음"을 더는 뜻하지 않아서, 셔플백 경계 라운드에서 이미 낸 문항이
+  // 다시 나왔다(실제로 재현된 회귀). 소진 직전까지 돌려서 그 경계를 지난다.
+  it('serves a party many rounds without repeating or breaking sibling exclusion', () => {
+    for (const room of [0, 1, 2]) {
+      const served: string[] = [];
+      for (let r = 0; r < 40; r++) {
+        // rounds/quiz.ts의 셔플백 wrap과 동일한 임계값.
+        if (NONSENSE_POOL_SORTED.length - served.length < 5 + 4) served.length = 0;
+        const snapshot = [...served];
+        const qs = buildQuizPlan(room * 1009 + r * 7919, NONSENSE_POOL_SORTED, snapshot).questions;
+        expect(qs.length, `room ${room} round ${r}`).toBe(5);
+        const seen = new Map<string, string>();
+        for (const q of qs) {
+          expect(snapshot, `room ${room} round ${r} repeated ${q.id}`).not.toContain(q.id);
+          for (const g of NONSENSE_GROUPS_BY_ID.get(q.id) ?? []) {
+            expect(seen.get(g), `room ${room} round ${r}: family "${g}" twice`).toBeUndefined();
+            seen.set(g, q.id);
+          }
+        }
+        served.push(...qs.map((q) => q.id));
+      }
+    }
+  });
 });
 
 describe('nonsense answer uniqueness', () => {

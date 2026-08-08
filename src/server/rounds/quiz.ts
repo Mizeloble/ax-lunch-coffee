@@ -82,7 +82,13 @@ export async function runQuizRound(io: IO, room: RoomState) {
   const served = room.servedQuestions?.[gameId] ?? [];
   // Shuffle-bag wrap: once too few unseen questions remain to fill a round, start a
   // fresh cycle instead of letting the fallback ladder serve arbitrary repeats.
-  if (pool.length - served.length < GAME.TRIVIA_QUESTION_COUNT) served.length = 0;
+  // The margin matters — "5 unseen left" doesn't mean "5 usable": sibling exclusion
+  // can rule out most of the tail (three palindrome questions can't share a round),
+  // and the picker then drops freshness before it drops the sibling rule, repeating
+  // a question. Wrapping a little early costs nothing; the bag is being emptied anyway.
+  if (pool.length - served.length < GAME.TRIVIA_QUESTION_COUNT + GAME.TRIVIA_WRAP_MARGIN) {
+    served.length = 0;
+  }
   const excludeIds = [...served];
 
   const seed = (Math.random() * 0x7fffffff) | 0;

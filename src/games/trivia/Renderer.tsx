@@ -8,7 +8,12 @@ import { serverNow } from '@/lib/server-clock';
 import { haptics } from '@/games/marble/haptics';
 import { GAME } from '@/lib/constants';
 import { GAME_META, type GameId } from '@/games/types';
-import type { TriviaAnswerAck, TriviaReschedulePayload, TriviaStandingsPayload } from '@/lib/protocol';
+import type {
+  TriviaAnswerAck,
+  TriviaResumePayload,
+  TriviaReschedulePayload,
+  TriviaStandingsPayload,
+} from '@/lib/protocol';
 import { computeRunningScores } from './scoring';
 import type { TriviaIntroData } from './server';
 
@@ -40,6 +45,7 @@ export function TriviaRenderer({
   gameId,
   startAt,
   replay,
+  resume,
   players,
   myPlayerToken,
 }: {
@@ -49,6 +55,8 @@ export function TriviaRenderer({
   durationMs: number;
   /** Answer-free intro — each correctIndex arrives at reveal via trivia:standings. */
   replay: TriviaIntroData;
+  /** Rejoin snapshot, null on a normal start. See `trivia:resume`. */
+  resume: TriviaResumePayload | null;
   players: Player[];
   myPlayerToken: string | null;
 }) {
@@ -123,6 +131,21 @@ export function TriviaRenderer({
       sock.off('trivia:reschedule', rescheduleHandler);
     };
   }, []);
+
+  // Mid-round rejoin: RoomClient holds the snapshot (it arrives on `join`, before
+  // this component exists) and hands it down. Restores the three things `state`
+  // can't carry — the short-circuited schedule, the answers revealed while we were
+  // away, and our own picks.
+  useEffect(() => {
+    if (!resume) return;
+    setScheduleOverride({
+      openAtOffsets: resume.openAtOffsets,
+      closeAtOffsets: resume.closeAtOffsets,
+    });
+    setRevealed(resume.revealed.slice());
+    setMyAnswers(resume.myPicks.slice());
+    setMyPickOffsets(resume.myPicks.map((p, i) => (p == null ? null : resume.myPickOffsets[i])));
+  }, [resume]);
 
   const schedule = scheduleOverride ?? replay.schedule;
 

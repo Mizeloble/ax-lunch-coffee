@@ -8,7 +8,7 @@ export const marbleServer: GameServerModule = {
   // Simulation is async (box2d-wasm load) → returns a Promise. `computeResult`'s
   // declared return type allows `Promise<ReplayPayload>`, and game-runner awaits it.
   async computeResult(input: ComputeResultInput): Promise<ReplayPayload> {
-    const sim = await simulateRace(input.seed, input.players);
+    const sim = await simulateRace(input.seed, input.players, input.loserCount);
     const losers = sim.finishOrder.slice(-input.loserCount);
     return {
       durationMs: sim.durationMs,

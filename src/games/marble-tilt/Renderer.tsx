@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ko } from '@/lib/i18n';
 import { getSocket } from '@/lib/socket-client';
 import { serverNow } from '@/lib/server-clock';
+import type { MarbleBoostAck } from '@/lib/protocol';
 import { haptics } from '@/games/marble/haptics';
 import type { SimulationResult, StaticEntity } from '@/games/marble/sim';
 import { CAMERA_EASE_RATE, INSET_FADE_RATE, ZOOM_THRESHOLD } from '@/games/marble/render/constants';
@@ -18,6 +19,7 @@ import {
   formatLoserLabel,
 } from '@/games/marble/render/overlay';
 import { roundedClip } from '@/games/marble/render/canvas-utils';
+import { resolveLosers } from '@/games/marble/render/losers';
 import type { Pane } from '@/games/marble/render/types';
 import { useGyro, type GyroState } from './useGyro';
 
@@ -77,6 +79,8 @@ export function MarbleTiltRenderer({
   // Snapshot of the penalty set, frozen the tick it's decided. Recomputing it from
   // "who hasn't finished" would shrink it as losers trickle in during the hold.
   const loserTokensRef = useRef<string[]>([]);
+  /** Tick the set was sealed on — drives the banner/card entry animations. */
+  const loserDecidedTickRef = useRef(-1);
   const totalTicksRef = useRef<number>(0);
   const doneAtRef = useRef<number | null>(null);
   // Boost flash effect: marble idx -> wall-clock when its boost was received.
@@ -172,7 +176,12 @@ export function MarbleTiltRenderer({
     if (now < boostCooldownAt) return;
     setBoostBudget((b) => b - 1);
     setBoostCooldownAt(now + BOOST_COOLDOWN_MS);
-    getSocket().emit('marble:boost');
+    // Optimistic decrement for responsiveness, then reconcile: the server owns the
+    // budget (it survives our reload) and rejects on its own cooldown clock.
+    getSocket().emit('marble:boost', (res: MarbleBoostAck) => {
+      if (typeof res?.remaining === 'number') setBoostBudget(res.remaining);
+      if (res && !res.accepted) setBoostCooldownAt(0);
+    });
     haptics.myFinish(); // reuse existing strong haptic for tactile boost feedback
   }, [boostBudget, boostCooldownAt]);
 
@@ -183,6 +192,7 @@ export function MarbleTiltRenderer({
       t: number;
       positions: number[];
       finished?: number[];
+      order?: number[];
       boosted?: number[];
       done?: boolean;
     }) => {
@@ -190,15 +200,17 @@ export function MarbleTiltRenderer({
       prevTickRef.current = latestTickRef.current;
       latestTickRef.current = { ...payload, recvAt };
       totalTicksRef.current = Math.max(totalTicksRef.current, payload.t + 1);
+      // Mirror the server's finish order — never accumulate our own. A client that
+      // reloaded mid-race saw none of the earlier finishes, and two marbles can
+      // cross on one tick; both used to corrupt the penalty set derived from it.
+      if (payload.order) {
+        finishOrderTokensRef.current = payload.order
+          .map((i) => intro.playerOrder[i])
+          .filter((t): t is string => !!t);
+      }
       if (payload.finished && payload.finished.length > 0) {
         for (const idx of payload.finished) {
-          if (finishedTicksRef.current[idx] < 0) {
-            finishedTicksRef.current[idx] = payload.t;
-            const tok = intro.playerOrder[idx];
-            if (tok && !finishOrderTokensRef.current.includes(tok)) {
-              finishOrderTokensRef.current.push(tok);
-            }
-          }
+          if (finishedTicksRef.current[idx] < 0) finishedTicksRef.current[idx] = payload.t;
         }
       }
       if (payload.boosted && payload.boosted.length > 0) {
@@ -307,7 +319,12 @@ export function MarbleTiltRenderer({
       // Renderer mounts during countdown — emitting tilt before sim.start() on
       // the server is harmless but pointless.
       const hasStarted = serverNow() >= startAt;
-      tiltActiveRef.current = hasStarted && !doneAtRef.current && myIdx >= 0;
+      // Stop steering once my marble is across the line — it's been removed from
+      // the physics world, so the emits were pure noise (20 Hz per finished player)
+      // and the boost button stayed live burning local budget on a marble that
+      // can't move.
+      const myDone = myIdx >= 0 && finishedTicksRef.current[myIdx] >= 0;
+      tiltActiveRef.current = hasStarted && !doneAtRef.current && myIdx >= 0 && !myDone;
 
       // Wait for first tick before drawing live positions.
       const latest = latestTickRef.current;
@@ -341,9 +358,14 @@ export function MarbleTiltRenderer({
         return;
       }
 
-      // Update live finish state on the faux replay.
+      // Update live finish state on the faux replay. A client that joined mid-race
+      // has no tick number for finishes it never saw, but the server's order still
+      // says they're done — mark those as finished on tick 0 so the leaderboard
+      // ranks them instead of piling them into "still running" at an identical y.
       for (let i = 0; i < totalPlayers; i++) {
-        fauxReplay.finishFrames[i] = finishedTicksRef.current[i];
+        const seenTick = finishedTicksRef.current[i];
+        const inOrder = finishOrderTokensRef.current.includes(intro.playerOrder[i]);
+        fauxReplay.finishFrames[i] = seenTick >= 0 ? seenTick : inOrder ? 0 : -1;
       }
       fauxReplay.finishOrder = finishOrderTokensRef.current;
 
@@ -381,17 +403,19 @@ export function MarbleTiltRenderer({
 
       // Fanfare when the last *safe* player crosses — from then on everyone still
       // running is a loser, so the whole penalty set is decided at that tick.
+      // The set comes from the server's order (finishers) plus whoever is still
+      // running, then `resolveLosers` takes the tail — the same derivation the
+      // precompute marble uses, so an extra same-tick finisher can't shrink it.
       const nLosers = Math.max(1, Math.min(loserCount, totalPlayers - 1));
-      const expectedFinishers = totalPlayers - nLosers;
-      const stlReached = finishOrderTokensRef.current.length >= expectedFinishers;
-      const stlToken = stlReached ? finishOrderTokensRef.current[expectedFinishers - 1] : null;
-      const stlIdx = stlToken ? intro.playerOrder.indexOf(stlToken) : -1;
-      const loserDecidedTick = stlIdx >= 0 ? finishedTicksRef.current[stlIdx] : -1;
+      const orderTokens = finishOrderTokensRef.current;
+      const stlReached = orderTokens.length >= totalPlayers - nLosers;
       if (stlReached && loserTokensRef.current.length === 0) {
-        loserTokensRef.current = intro.playerOrder.filter(
-          (t) => !finishOrderTokensRef.current.includes(t),
-        );
+        const stillRunning = intro.playerOrder.filter((t) => !orderTokens.includes(t));
+        loserTokensRef.current = resolveLosers([...orderTokens, ...stillRunning], nLosers)
+          .loserTokens;
+        loserDecidedTickRef.current = tickIdx;
       }
+      const loserDecidedTick = loserDecidedTickRef.current;
       const loserTokens = loserTokensRef.current;
       const iAmLoser = !!myPlayerToken && loserTokens.includes(myPlayerToken);
       // Camera / burst focus stays on one marble; the banner names them all.

@@ -13,6 +13,7 @@ import {
   type PublicRoomState,
   type ReactionGoPayload,
   type ResultPayload,
+  type TriviaResumePayload,
 } from '@/store/room-store';
 import { Lobby } from '@/components/Lobby';
 import { Logo } from '@/components/Logo';
@@ -46,6 +47,8 @@ export default function RoomClient({
   const setResult = useRoomStore((s) => s.setResult);
   const setReactionGo = useRoomStore((s) => s.setReactionGo);
   const reactionGo = useRoomStore((s) => s.reactionGo);
+  const setTriviaResume = useRoomStore((s) => s.setTriviaResume);
+  const triviaResume = useRoomStore((s) => s.triviaResume);
   const resetStore = useRoomStore((s) => s.reset);
   const state = useRoomStore((s) => s.state);
   const myToken = useRoomStore((s) => s.myToken);
@@ -187,6 +190,9 @@ export default function RoomClient({
     // server replays this immediately after `state`, before React has mounted the
     // renderer, so a listener living inside the renderer would never see it.
     const onReactionGo = (p: ReactionGoPayload) => setReactionGo(p);
+    // Same lifting as `reaction:go`: this lands on `join`, before TriviaRenderer
+    // has mounted its own listeners.
+    const onTriviaResume = (p: TriviaResumePayload) => setTriviaResume(p);
     const onErr = ({ message }: { code: string; message: string }) => {
       setErrMsg(message);
       setPhase('error');
@@ -196,6 +202,7 @@ export default function RoomClient({
     socket.on('game:start', onGameStart);
     socket.on('game:result', onResult);
     socket.on('reaction:go', onReactionGo);
+    socket.on('trivia:resume', onTriviaResume);
     socket.on('error', onErr);
 
     const identity = loadIdentity();
@@ -281,6 +288,7 @@ export default function RoomClient({
       socket.off('game:start', onGameStart);
       socket.off('game:result', onResult);
       socket.off('reaction:go', onReactionGo);
+      socket.off('trivia:resume', onTriviaResume);
       socket.off('error', onErr);
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
@@ -299,6 +307,7 @@ export default function RoomClient({
     setGameStart,
     setResult,
     setReactionGo,
+    setTriviaResume,
     resetStore,
   ]);
 
@@ -379,8 +388,14 @@ export default function RoomClient({
   // Reloaded mid-round in a game whose replay can't ride on state (marble's frame
   // track is megabytes). We can't resume the race, but showing the lobby would
   // read as "the round vanished" — wait for the result instead.
+  // Requires `currentRound`: between "host pressed start" and `game:start` the
+  // server is still simulating and there is no round to wait for yet. Without
+  // this check every player saw "게임이 진행 중이에요" for that whole window on a
+  // normal start — telling them they'd been left out of a race about to begin.
   const showRoundWaiting =
-    (state?.status === 'countdown' || state?.status === 'playing') && !showGame;
+    (state?.status === 'countdown' || state?.status === 'playing') &&
+    !!state?.currentRound &&
+    !showGame;
 
   function handleReplay() {
     setReplayStartAt(serverNow() + UI.REPLAY_LEAD_MS);
@@ -480,6 +495,7 @@ export default function RoomClient({
             startAt={effectiveStartAt}
             durationMs={gameStart.durationMs}
             replay={gameStart.replay as TriviaIntroData}
+            resume={triviaResume}
             players={gameStart.players}
             myPlayerToken={myToken}
           />

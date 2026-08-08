@@ -118,6 +118,23 @@ export function attachSocketHandlers(io: IO) {
           deadlineAt: room.reaction.deadlineAt,
         });
       }
+
+      // Same idea for a quiz round: `state` alone can't restore it. The schedule
+      // may have been pulled forward by a short-circuit this socket missed, the
+      // revealed answers only ever arrive on one-shot pushes, and this player's
+      // own picks live in the client that just reloaded.
+      if (room.trivia) {
+        const t = room.trivia;
+        const now = Date.now();
+        const mine = t.answers.get(player.playerToken);
+        socket.emit('trivia:resume', {
+          openAtOffsets: t.openAts.map((at) => at - t.startAt),
+          closeAtOffsets: t.closeAts.map((at) => at - t.startAt),
+          revealed: t.correctIndices.map((ci, i) => (now >= t.closeAts[i] ? ci : null)),
+          myPicks: t.openAts.map((_, i) => mine?.[i]?.choice ?? null),
+          myPickOffsets: t.openAts.map((_, i) => mine?.[i]?.atOffsetMs ?? 0),
+        });
+      }
     });
 
     socket.on('host:addPlayer', (payload, ack) => {
@@ -260,10 +277,30 @@ export function attachSocketHandlers(io: IO) {
       if (hotLimited(socket, 'tap')) return ack?.({ recorded: false });
       const room = currentRoomId ? getRoom(currentRoomId) : null;
       if (!room || gameCategory(room.gameId) !== 'reaction' || !room.reaction) return ack?.({ recorded: false });
-      if (room.status !== 'playing') return ack?.({ recorded: false });
-      if (arrivalAt > room.reaction.deadlineAt) return ack?.({ recorded: false });
+      // `room.reaction` exists for the whole round, countdown included — and the
+      // renderer is already on screen and tappable during the countdown. Rejecting
+      // those taps used to drop the player into the `noTap` bucket, which ranks
+      // *below* every false start: the earliest flincher got the mildest outcome.
+      // Record them instead; the deeply-negative offset lands them in `falseStart`
+      // exactly as the "earliest flinch is worst" rule intends.
+      if (room.status !== 'countdown' && room.status !== 'playing') {
+        return ack?.({ recorded: false });
+      }
+      // Accept in-flight taps past the deadline — that's what REACTION_TAIL_MS is
+      // for (the round doesn't finalize until deadline + TAIL). A tap that arrives
+      // late simply ranks last among tappers, which beats being called 미탭.
+      if (arrivalAt > room.reaction.deadlineAt + GAME.REACTION_TAIL_MS) {
+        return ack?.({ recorded: false });
+      }
       const player = findPlayerBySocket(room, socket.id);
       if (!player) return ack?.({ recorded: false });
+      // Only players the round actually snapshotted can score. Someone who was
+      // mid-grace when the round started isn't in `connectedPlayers`, so their tap
+      // would be recorded here and then silently dropped from the ranking — an
+      // ack saying "recorded" for input that can never place is the worst answer.
+      if (!room.reaction.participants.has(player.playerToken)) {
+        return ack?.({ recorded: false });
+      }
       // First tap only — server-authoritative.
       if (room.reaction.firstTaps.has(player.playerToken)) return ack?.({ recorded: false });
       const offset = arrivalAt - room.reaction.goAt;
@@ -318,15 +355,21 @@ export function attachSocketHandlers(io: IO) {
       room.marbleTilt.sim.setTilt(player.playerToken, clamped);
     });
 
-    socket.on('marble:boost', () => {
-      if (hotLimited(socket, 'boost')) return;
+    socket.on('marble:boost', (ack) => {
+      if (hotLimited(socket, 'boost')) return ack?.({ accepted: false, remaining: 0 });
       const room = currentRoomId ? getRoom(currentRoomId) : null;
-      if (!room || !isLiveGame(room.gameId) || !room.marbleTilt) return;
-      if (room.status !== 'playing') return;
+      if (!room || !isLiveGame(room.gameId) || !room.marbleTilt) {
+        return ack?.({ accepted: false, remaining: 0 });
+      }
+      if (room.status !== 'playing') return ack?.({ accepted: false, remaining: 0 });
       const player = findPlayerBySocket(room, socket.id);
-      if (!player) return;
-      // Sim enforces budget + cooldown internally, so we just forward.
-      room.marbleTilt.sim.tryBoost(player.playerToken);
+      if (!player) return ack?.({ accepted: false, remaining: 0 });
+      // Sim enforces budget + cooldown internally, so we just forward — and report
+      // back what it decided. Without the ack the client's local budget was pure
+      // guesswork: a reloaded player got a fresh "3 left" the server didn't honour,
+      // and a boost the server rejected on its own cooldown clock still burned one.
+      const accepted = room.marbleTilt.sim.tryBoost(player.playerToken);
+      ack?.({ accepted, remaining: room.marbleTilt.sim.boostsLeft(player.playerToken) });
     });
 
     socket.on('reset', () => {

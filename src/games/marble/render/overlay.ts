@@ -47,15 +47,27 @@ export function drawLeaderboard(
   const panelX = 8 * dpr;
   // Push below the top-left "내 공 시점" pane label so they don't overlap.
   const panelY = 56 * dpr;
-  const panelH = padding * 2 + rowH * rows.length;
+
+  // A 30-player room needs ~1100px of rows — it ran off the bottom of the phone
+  // and collided with the loser banner. Show as many rows as fit above the banner,
+  // and if that cuts my own row off, slide the window down to keep me visible:
+  // your own position is the one thing the board has to show.
+  const maxRows = Math.max(3, Math.floor((H * 0.5 - panelY - padding * 2) / rowH));
+  let firstRow = 0;
+  if (rows.length > maxRows) {
+    const myRow = rows.findIndex((r) => r.token === myPlayerToken);
+    if (myRow >= maxRows) firstRow = Math.min(myRow - maxRows + 1, rows.length - maxRows);
+  }
+  const visibleRows = rows.slice(firstRow, firstRow + maxRows);
+  const panelH = padding * 2 + rowH * visibleRows.length;
 
   // Background
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   roundRectPath(ctx, panelX, panelY, panelW, panelH, 10 * dpr);
   ctx.fill();
 
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
+  for (let i = 0; i < visibleRows.length; i++) {
+    const r = visibleRows[i];
     const player = playerByToken.get(r.token);
     const ry = panelY + padding + i * rowH;
     const isMe = r.token === myPlayerToken;
@@ -299,9 +311,13 @@ export function drawLoserBanner(
   ctx.textBaseline = 'middle';
   ctx.lineWidth = 5 * dpr;
   const firstLineY = n === 1 ? cy - 4 * dpr : cy - 10 * dpr - ((n - 1) * lineH) / 2;
+  // Names are clamped to the banner's inner width. `bannerW` is capped at 92% of
+  // the viewport, so a long nickname would otherwise paint past the banner — and
+  // the color dot, positioned off the measured text width, would land off-canvas.
+  const nameMaxW = bannerW - 72 * dpr;
   losers.forEach((l, i) => {
     const y = firstLineY + i * lineH;
-    const text = n === 1 ? `🎯 ${loserNick}` : l.nickname;
+    const text = ellipsize(ctx, n === 1 ? `🎯 ${loserNick}` : l.nickname, nameMaxW);
     ctx.strokeStyle = 'rgba(0,0,0,0.45)';
     ctx.strokeText(text, cx, y);
     ctx.fillStyle = '#fff';
@@ -319,7 +335,7 @@ export function drawLoserBanner(
   ctx.font = `${16 * dpr}px sans-serif`;
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
   const subY = n === 1 ? cy + 38 * dpr : firstLineY + (n - 1) * lineH + lineH * 0.9;
-  ctx.fillText(ko.game.loserRevealedSub, cx, subY);
+  ctx.fillText(n === 1 ? ko.game.loserRevealedSub : ko.game.loserRevealedSubN(n), cx, subY);
 
   ctx.restore();
 }

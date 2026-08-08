@@ -86,6 +86,30 @@ describe('syncServerClock', () => {
     expect(getClockOffsetMs()).toBe(0); // 동기화 실패 = 현행(보정 없음) 동작
   });
 
+  it('첫 프로브부터 즉시 반영한다 (재접속 직후 라운드가 그 창에서 그려진다)', async () => {
+    // join은 1왕복이면 끝나므로, 5왕복을 다 기다렸다 적용하면 재접속 클라는
+    // 정확히 보정이 필요한 구간을 보정 없이 렌더한다.
+    const skew = 4_000;
+    const samples = [0, 1, 2, 3, 4].map((i) => {
+      const t0 = 1_000 + i * 1_000;
+      const rtt = 10 + i * 10; // 첫 표본이 가장 정확
+      return { rtt, serverAtMid: t0 + rtt / 2 + skew };
+    });
+    const seenDuringLoop: number[] = [];
+    const sock = fakeSocket(samples);
+    const wrapped = {
+      emit(e: 'time:sync', ack: (t: number) => void) {
+        // 두 번째 프로브를 보내는 시점엔 첫 표본이 이미 반영돼 있어야 한다.
+        seenDuringLoop.push(getClockOffsetMs());
+        sock.emit(e, ack);
+      },
+    };
+    await syncServerClock(wrapped);
+    expect(seenDuringLoop[0]).toBe(0); // 첫 프로브 전엔 보정 없음
+    expect(seenDuringLoop[1]).toBe(skew); // 두 번째 프로브 전엔 이미 보정됨
+    expect(getClockOffsetMs()).toBe(skew);
+  });
+
   it('serverNow()가 오프셋을 반영한다', async () => {
     const skew = 1_234;
     const samples = [0, 1, 2, 3, 4].map((i) => {

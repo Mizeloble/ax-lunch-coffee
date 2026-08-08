@@ -9,7 +9,12 @@ import { simulateRace } from '../marble/sim';
  */
 export const marbleCheerServer: GameServerModule = {
   async computeResult(input: ComputeResultInput): Promise<ReplayPayload> {
-    const sim = await simulateRace(input.seed, input.players, input.chargeRatios);
+    const sim = await simulateRace(
+      input.seed,
+      input.players,
+      input.loserCount,
+      input.chargeRatios,
+    );
     const losers = sim.finishOrder.slice(-input.loserCount);
     return {
       durationMs: sim.durationMs,

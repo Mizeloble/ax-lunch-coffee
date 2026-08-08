@@ -170,6 +170,9 @@ export const ko = {
     loserRevealed: (name: string) => name,
     loserRevealedBadge: '꼴찌 결정!',
     loserRevealedBadgeN: (n: number) => `벌칙 ${n}명 결정!`,
+    // 배너는 전원이 함께 보는 오버레이라 2인칭을 쓰면 안전한 사람에게 거짓말이
+    // 된다(그 사람 화면 위쪽엔 "4등 골인!" 카드가 동시에 떠 있다).
+    loserRevealedSubN: (n: number) => `오늘 벌칙은 이 ${n}명!`,
     loserRevealedSub: '오늘 벌칙은 당신!',
   },
   result: {

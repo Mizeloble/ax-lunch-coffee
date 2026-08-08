@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reactionServer } from './server';
+import { prepareReactionIntro, reactionServer } from './server';
 import { GAME } from '../../lib/constants';
 import type { GameInputPlayer } from '../types';
 
@@ -75,6 +75,27 @@ describe('reactionServer.computeResult', () => {
     const firsts = new Set<string>();
     for (let s = 0; s < 20; s++) firsts.add((await tied(s))[0]);
     expect(firsts).toEqual(new Set(['amy', 'zoe']));
+  });
+
+  it('broadcast durationMs leaks nothing about goAt — same for every seed', () => {
+    // goAt은 라운드의 유일한 비밀인데 durationMs가 그 아핀 파생값이면
+    // `goAt = startAt + durationMs - 2100`으로 그대로 역산된다(실제 발생한 회귀).
+    const durations = new Set<number>();
+    const goAts = new Set<number>();
+    for (let seed = 0; seed < 200; seed++) {
+      const intro = prepareReactionIntro(seed);
+      durations.add(intro.durationMs);
+      goAts.add(intro.goAtOffsetMs);
+    }
+    expect(goAts.size).toBeGreaterThan(1); // goAt은 seed마다 달라야 하고
+    expect(durations.size).toBe(1); // durationMs는 그걸 드러내면 안 된다
+    // 상한이어야 라운드가 잘리지 않는다.
+    for (let seed = 0; seed < 200; seed++) {
+      const intro = prepareReactionIntro(seed);
+      expect(intro.durationMs).toBeGreaterThanOrEqual(
+        intro.deadlineOffsetMs + GAME.REACTION_TAIL_MS,
+      );
+    }
   });
 
   it('is deterministic for the same seed (intro timing)', async () => {

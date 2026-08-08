@@ -110,6 +110,15 @@ export type MarbleTiltTickPayload = {
   t: number;
   positions: number[]; // [x0,y0,x1,y1,...] in box2d meters, rounded to .01
   finished?: number[]; // marble indices (matching playerOrder) that crossed goal this tick
+  /**
+   * Authoritative finish order so far, as marble indices — best first. Sent on
+   * every tick (≤30 small ints) because the client must not *infer* it: deriving
+   * the penalty set from "who I saw finish" named the winner as a loser on any
+   * client that reloaded mid-race, and under-counted losers whenever two marbles
+   * crossed on the same tick. Once the race ends this carries the complete final
+   * ranking, which is also what lets a timed-out race reveal its losers at all.
+   */
+  order?: number[];
   /** Marble indices whose owner triggered a boost during this tick — clients
    *  use these for one-shot visual effects (white flash + burst). */
   boosted?: number[];
@@ -143,6 +152,28 @@ export type TriviaAnswerAck = { recorded: boolean };
  */
 export type ReactionGoPayload = { goAt: number; deadlineAt: number };
 
+export type MarbleBoostAck = { accepted: boolean; remaining: number };
+
+/**
+ * Everything a quiz client needs to rejoin a round already in progress, sent to
+ * that socket alone on `join`. The three things it carries are exactly the three
+ * that can't be rebuilt from `state`: the schedule may have been pulled forward
+ * by the all-answered short-circuit, the answers revealed so far arrive on
+ * one-shot `trivia:standings` pushes (state's intro is deliberately answer-free),
+ * and a player's own picks live only in that client's React state until now.
+ */
+export type TriviaResumePayload = {
+  /** Current schedule as ms offsets from startAt — post short-circuit. */
+  openAtOffsets: number[];
+  closeAtOffsets: number[];
+  /** Correct index per question, null for questions not yet revealed. */
+  revealed: Array<0 | 1 | 2 | 3 | null>;
+  /** This player's own submitted picks, null where they didn't answer. */
+  myPicks: Array<0 | 1 | 2 | 3 | null>;
+  /** ms offset from each question's openAt for the picks above (0 when no pick). */
+  myPickOffsets: number[];
+};
+
 export type ErrorPayload = { code: string; message: string };
 
 export type JoinAck =
@@ -166,6 +197,7 @@ export type ServerToClientEvents = {
   'game:start': (payload: GameStartPayload) => void;
   'game:result': (payload: ResultPayload) => void;
   'reaction:go': (payload: ReactionGoPayload) => void;
+  'trivia:resume': (payload: TriviaResumePayload) => void;
   'trivia:standings': (payload: TriviaStandingsPayload) => void;
   'trivia:reschedule': (payload: TriviaReschedulePayload) => void;
   'marble:tick': (payload: MarbleTiltTickPayload) => void;
@@ -199,7 +231,9 @@ export type ClientToServerEvents = {
   /** Marble-tilt: client streams normalized X-axis tilt (-1..1) at ~20 Hz while playing. */
   'marble:tilt': (payload: { x: number }) => void;
   /** Marble-tilt: instant boost (tap). Server enforces per-round budget + cooldown. */
-  'marble:boost': () => void;
+  /** Tilt-race boost. Ack mirrors the server's budget so the client's counter
+   *  can't drift (reload resets it locally; jitter can lose one to the cooldown). */
+  'marble:boost': (ack?: (res: MarbleBoostAck) => void) => void;
   'host:addPlayer': (
     payload: { nickname: string },
     ack: (res: AddPlayerAck) => void,

@@ -21,7 +21,14 @@ export function startChargingPhase(io: IO, room: RoomState) {
   }, GAME.CHARGE_TICK_MS);
 
   const finishTimer = setTimeout(async () => {
-    if (!getRoom(room.id) || room.status !== 'charging') return;
+    // Clear on the way out too: every path that leaves `charging` already calls
+    // `clearCharge`, so this is unreachable today — but if it ever isn't, the
+    // 250ms tick interval would run for the life of the process against a dead
+    // room, with `charge:tick` still accepting input.
+    if (!getRoom(room.id) || room.status !== 'charging') {
+      clearCharge(room);
+      return;
+    }
 
     const counts = room.charge?.counts ?? new Map<string, number>();
     clearCharge(room);
@@ -36,7 +43,19 @@ export function startChargingPhase(io: IO, room: RoomState) {
       }
     }
 
-    await runRound(io, room, chargeRatios);
+    // The `start` handler wraps its round runners in try/catch precisely so a
+    // throw can't leave the room stuck half-started — but this call runs from a
+    // timer, long outside that scope. Repeat the guard here or marble-cheer is
+    // the one game where a failed round strands everyone on the countdown.
+    try {
+      await runRound(io, room, chargeRatios);
+    } catch (err) {
+      console.error('charge → runRound failed', room.id, err);
+      if (getRoom(room.id)) {
+        room.status = 'lobby';
+        io.to(room.id).emit('state', publicRoomState(room));
+      }
+    }
     // Totals freeze a beat *after* the countdown ends so the clients' final
     // cumulative flush — always in flight at endsAt — still counts. `charge:tick`
     // itself needs no deadline check: it only requires `room.charge`, which this

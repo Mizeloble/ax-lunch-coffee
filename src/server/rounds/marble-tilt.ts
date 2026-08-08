@@ -29,7 +29,10 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
 
   const seed = (Math.random() * 0x7fffffff) | 0;
   const epoch = ++room.roundEpoch;
+  // See standard.ts: the previous round's `currentRound` must not ride along with
+  // a `countdown` status, or reconnecting clients rebuild the wrong round.
   room.status = 'countdown';
+  room.currentRound = undefined;
   io.to(room.id).emit('state', publicRoomState(room));
 
   const loserCount = effectiveLoserCount(room.loserCount, connectedPlayers.length);

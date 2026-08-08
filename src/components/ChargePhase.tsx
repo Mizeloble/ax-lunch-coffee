@@ -36,12 +36,21 @@ export function ChargePhase() {
   const myCountRef = useRef(0);
   const lastSentRef = useRef(0);
   const lastSentValRef = useRef(-1);
+  // One-shot: only the first `charge:state` after a recovery mount seeds us.
+  const seededRef = useRef(false);
+  // Read inside the socket handler, which is bound once — a state value would be
+  // captured stale there.
+  const startEndsAtRef = useRef<number | null>(null);
 
   // Listen for server charge events
   useEffect(() => {
     const socket = getSocket();
     const onStart = (p: { endsAt: number }) => {
       setStartEndsAt(p.endsAt);
+      startEndsAtRef.current = p.endsAt;
+      // Saw the phase begin → nothing to recover, and seeding from a later
+      // broadcast would only overwrite our own live count.
+      seededRef.current = true;
       setMyCount(0);
       myCountRef.current = 0;
       lastSentRef.current = 0;
@@ -51,6 +60,19 @@ export function ChargePhase() {
     const onState = (p: { totals: Record<string, number>; cap: number }) => {
       setServerTotals(p.totals);
       setCap(p.cap);
+      // Recovery mount (reloaded mid-charge, so we never saw `charge:start`):
+      // adopt the count the server already holds for us. The server keeps the
+      // maximum, so starting our local counter back at 0 meant every tap until
+      // we clawed back to the old total was silently discarded.
+      if (!seededRef.current && startEndsAtRef.current === null && myToken) {
+        seededRef.current = true;
+        const held = p.totals[myToken] ?? 0;
+        if (held > 0) {
+          myCountRef.current = held;
+          setMyCount(held);
+          lastSentValRef.current = held;
+        }
+      }
     };
     socket.on('charge:start', onStart);
     socket.on('charge:state', onState);
@@ -58,7 +80,7 @@ export function ChargePhase() {
       socket.off('charge:start', onStart);
       socket.off('charge:state', onState);
     };
-  }, []);
+  }, [myToken]);
 
   // RAF loop for `now` (drives the countdown number)
   useEffect(() => {

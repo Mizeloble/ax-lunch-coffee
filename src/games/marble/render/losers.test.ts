@@ -36,6 +36,37 @@ describe('resolveLosers', () => {
   });
 });
 
+// marble-tilt는 완주자 목록(서버 권위)과 아직 달리는 사람을 이어붙여 같은 헬퍼로
+// 벌칙자를 뽑는다. 예전엔 "관측한 골인의 여집합"으로 유도해서, 같은 틱에 2명이
+// 골인하면 벌칙자가 모자라고 재접속 클라는 1등을 벌칙자로 지목했다.
+describe('라이브 레이스(틸트) 유도', () => {
+  const ALL = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6'];
+
+  it('같은 틱 다중 골인으로 완주자가 넘쳐도 벌칙자 수가 줄지 않는다', () => {
+    // 벌칙 2명이면 4명에서 멈춰야 하는데 한 틱에 2명이 통과해 5명이 됐다.
+    const order = ['f1', 'f2', 'f3', 'f4', 'f5'];
+    const stillRunning = ALL.filter((t) => !order.includes(t));
+    const { loserTokens } = resolveLosers([...order, ...stillRunning], 2);
+    expect(loserTokens).toEqual(['f6', 'f5']); // 꼴찌순, 정확히 2명
+  });
+
+  it('완주 순서를 서버에서 그대로 받으면 1등은 절대 벌칙자가 아니다', () => {
+    for (const n of [1, 2, 3]) {
+      const order = ['f1', 'f2', 'f3', 'f4', 'f5'];
+      const stillRunning = ALL.filter((t) => !order.includes(t));
+      const { loserTokens } = resolveLosers([...order, ...stillRunning], n);
+      expect(loserTokens).toHaveLength(n);
+      expect(loserTokens).not.toContain('f1');
+    }
+  });
+
+  it('타임아웃으로 아무도 완주 못 해도 최종 랭킹만 있으면 벌칙자가 나온다', () => {
+    // 서버가 done 틱에 y순 최종 랭킹을 통째로 실어 준다.
+    const { loserTokens } = resolveLosers(ALL, 2);
+    expect(loserTokens).toEqual(['f6', 'f5']);
+  });
+});
+
 describe('연출 ↔ 서버 결과 일치', () => {
   it('렌더러가 뽑는 벌칙자 집합이 서버 losers와 같다', async () => {
     const players = ['p1', 'p2', 'p3', 'p4', 'p5'].map((playerToken) => ({

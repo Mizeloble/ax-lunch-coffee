@@ -18,8 +18,12 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
   const seed = (Math.random() * 0x7fffffff) | 0;
   const loserCount = effectiveLoserCount(room.loserCount, connectedPlayers.length);
   const epoch = ++room.roundEpoch;
-  // Mark as countdown immediately so a second click is ignored even while WASM loads
+  // Mark as countdown immediately so a second click is ignored even while WASM loads.
+  // Drop the finished round's `currentRound` in the same breath: clients rebuild
+  // `game:start` from it on reconnect, and broadcasting "countdown" alongside the
+  // *previous* round's data made them stage the game that just ended.
   room.status = 'countdown';
+  room.currentRound = undefined;
   io.to(room.id).emit('state', publicRoomState(room));
 
   let replay;

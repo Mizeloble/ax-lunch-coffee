@@ -25,11 +25,22 @@ function pickGoAtOffset(seed: number): number {
   return GAME.REACTION_PRE_GO_MIN_MS + Math.floor(rng() * (span + 1));
 }
 
+/**
+ * Broadcast round length. Deliberately the *worst case*, identical for every
+ * seed: `durationMs` ships in `game:start` and `state.currentRound` next to
+ * `startAt`, so a real duration would hand back the very thing the round hides —
+ * `goAt = startAt + durationMs - (DEADLINE + TAIL)`. Hiding goAt while shipping
+ * an affine function of it hides nothing. Nothing depends on the exact value:
+ * the round's own `finishTimer` schedules off `deadlineAt`, and the client never
+ * reads this field for reaction.
+ */
+export const REACTION_BROADCAST_DURATION_MS =
+  GAME.REACTION_PRE_GO_MAX_MS + GAME.REACTION_DEADLINE_MS + GAME.REACTION_TAIL_MS;
+
 export function prepareReactionIntro(seed: number): GameIntroTimings {
   const goAtOffsetMs = pickGoAtOffset(seed);
   const deadlineOffsetMs = goAtOffsetMs + GAME.REACTION_DEADLINE_MS;
-  const durationMs = deadlineOffsetMs + GAME.REACTION_TAIL_MS;
-  return { goAtOffsetMs, deadlineOffsetMs, durationMs };
+  return { goAtOffsetMs, deadlineOffsetMs, durationMs: REACTION_BROADCAST_DURATION_MS };
 }
 
 type Bucket = 'tap' | 'falseStart' | 'noTap';

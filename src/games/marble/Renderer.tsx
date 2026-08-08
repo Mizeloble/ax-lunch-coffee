@@ -209,7 +209,10 @@ export function MarbleRenderer({
       const burstFrame2 = loserDecidedFrame + Math.floor(fps * 0.25);
       const burstFrame3 = loserDecidedFrame + Math.floor(fps * 0.55);
       for (let f = lastProcessedFrame + 1; f <= idx; f++) {
-        if (loserIdx < 0) continue;
+        // `-1` means nobody safe ever crossed (timed-out race): the banner, card
+        // and haptic all sit behind `>= 0` guards, but bursts 2 and 3 would still
+        // land on frames 29/65 — fanfare for a reveal that never happens.
+        if (loserDecidedFrame < 0 || loserIdx < 0) continue;
         const isB1 = f === burstFrame1;
         const isB2 = f === burstFrame2;
         const isB3 = f === burstFrame3;
@@ -344,7 +347,7 @@ export function MarbleRenderer({
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [startAt, durationMs, replay, players, myPlayerToken]);
+  }, [startAt, durationMs, loserCount, replay, players, myPlayerToken]);
 
   return (
     <div ref={wrapperRef} className="absolute inset-0 bg-zinc-950">

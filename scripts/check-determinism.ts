@@ -35,8 +35,8 @@ async function main() {
 
   // marble-cheer style: same with chargeRatios
   const charges = { a: 0.0, b: 0.5, c: 1.0, d: 0.25, e: 0.75, f: 0.1 };
-  const c1 = await simulateRace(seed, players, charges);
-  const c2 = await simulateRace(seed, players, charges);
+  const c1 = await simulateRace(seed, players, 1, charges);
+  const c2 = await simulateRace(seed, players, 1, charges);
   if (
     JSON.stringify({ f: c1.frames, o: c1.finishOrder }) !==
     JSON.stringify({ f: c2.frames, o: c2.finishOrder })
