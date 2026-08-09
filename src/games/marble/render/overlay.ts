@@ -37,7 +37,10 @@ export function drawLeaderboard(
     }
   }
   finishers.sort((a, b) => a.rank - b.rank);
-  active.sort((a, b) => b.y - a.y);
+  // y descending, but exact ties fall back to the server's order. During the
+  // post-race hold every straggler sits at an identical frozen y, so without this
+  // the board's bottom rows disagree with the ranking the result screen shows.
+  active.sort((a, b) => b.y - a.y || (finishRank.get(a.token) ?? 0) - (finishRank.get(b.token) ?? 0));
   for (const f of finishers) rows.push({ token: f.token, rank: rows.length + 1, finished: true });
   for (const a of active) rows.push({ token: a.token, rank: rows.length + 1, finished: false });
 

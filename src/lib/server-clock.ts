@@ -26,6 +26,12 @@ const PROBES = 5;
 const PROBE_TIMEOUT_MS = 2000;
 
 let offsetMs = 0;
+/**
+ * Bumped on every `syncServerClock` call. Two runs can overlap (a reconnect while
+ * an earlier sync is still probing) and without this the slower, staler run wins
+ * simply by finishing last.
+ */
+let generation = 0;
 
 /** Best estimate of the server's clock right now. */
 export function serverNow(): number {
@@ -40,6 +46,20 @@ export function getClockOffsetMs(): number {
 /** 테스트 전용 — 오프셋 초기화. */
 export function resetClockForTest() {
   offsetMs = 0;
+  generation = 0;
+}
+
+/**
+ * Keep the estimate honest for the length of a session. `connect` fires once and
+ * a phone can move its clock while connected (NTP correction, manual change,
+ * waking from a long sleep) — the games read `serverNow()` every frame, so a jump
+ * mid-round would skip a phase outright.
+ */
+export function startClockResync(socket: SyncSocket, intervalMs = 60_000): () => void {
+  const id = setInterval(() => {
+    void syncServerClock(socket);
+  }, intervalMs);
+  return () => clearInterval(id);
 }
 
 type SyncSocket = {
@@ -52,10 +72,12 @@ type SyncSocket = {
  * Never throws and never rejects: a failed sync just leaves the last estimate.
  */
 export async function syncServerClock(socket: SyncSocket): Promise<void> {
+  const gen = ++generation;
   let bestRtt = Number.POSITIVE_INFINITY;
 
   for (let i = 0; i < PROBES; i++) {
     const sample = await probe(socket);
+    if (gen !== generation) return; // a newer sync started; its samples are fresher
     if (!sample) continue;
     if (sample.rtt >= bestRtt || !Number.isFinite(sample.offset)) continue;
     bestRtt = sample.rtt;

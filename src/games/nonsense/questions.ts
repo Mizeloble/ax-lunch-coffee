@@ -342,7 +342,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "활짝 웃는 '방긋'을 '빵긋'으로 바꾼 말장난.",
   },
   {
-    id: 'pun-a-snake-fast',
+    id: 'pun-heaviest-bird',
     category: '말장난',
     question: '세상에서 가장 무거운 새는?',
     choices: ['독수리', '백조', '참새', '펭귄'],
@@ -382,7 +382,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "과일 사과와 '미안하다 사과'의 동음이의 말장난.",
   },
   {
-    id: 'pun-a-sheep-yes',
+    id: 'pun-banana-laugh',
     category: '말장난',
     question: '바나나가 크게 웃으면?',
     choices: ['바나나킥', '바나나칩', '바나나맛', '바나나우유'],
@@ -478,7 +478,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "'손'오공 첫 글자에 손이 들어가서.",
   },
   {
-    id: 'pun-b-knee-country',
+    id: 'pun-dog-teaches',
     category: '말장난',
     question: '개가 학생을 가르치면?',
     choices: ['개인지도', '개훈련', '강아지반', '애견교실'],
@@ -512,13 +512,14 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
   {
     id: 'pun-b-finger-snack',
     category: '재치',
-    question: '손가락이 제일 좋아하는 과자는?',
-    choices: ['빼빼로', '새우깡', '꼬깔콘', '홈런볼'],
+    question: '손가락에 끼워 먹는 과자는?',
+    // '빼빼로'는 손가락을 연상시켜 정답과 경합했다(입고 게이트 3: 복수 정답 금지).
+    choices: ['새우깡', '초코파이', '꼬깔콘', '홈런볼'],
     correctIndex: 2,
     note: '손가락 끝에 끼워 먹는 꼬깔콘이라서.',
   },
   {
-    id: 'pun-c-coldest-sea',
+    id: 'pun-fastest-bird',
     category: '말장난',
     question: '세상에서 가장 빠른 새는?',
     choices: ['눈깜짝할새', '제비', '총알새', '번개새'],
@@ -542,7 +543,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "손으로 떠 만든 '수제비'.",
   },
   {
-    id: 'pun-c-king-fall',
+    id: 'pun-prettiest-dog',
     category: '말장난',
     question: '개 중에서 가장 아름다운 개는?',
     choices: ['진돗개', '무지개', '삽살개', '풍산개'],
@@ -550,7 +551,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "하늘의 '무지개'를 개에 빗댄 말장난.",
   },
   {
-    id: 'pun-c-meat-dog',
+    id: 'pun-meat-companion-dog',
     category: '말장난',
     question: '고기 먹을 때마다 따라다니는 개는?',
     choices: ['이쑤시개', '집게', '무지개', '번개'],
@@ -662,7 +663,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "모자(母子)가 '이크!' 하면 모자이크.",
   },
   {
-    id: 'pun-c-grape-laugh',
+    id: 'pun-fastest-ricecake',
     category: '말장난',
     question: '세상에서 가장 빠른 떡은?',
     choices: ['찰떡', '헐레벌떡', '꿀떡', '인절미'],
@@ -678,7 +679,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "파가 '파르르' 떠는 말장난.",
   },
   {
-    id: 'pun-c-money-soup',
+    id: 'pun-hated-distance',
     category: '말장난',
     question: '사람들이 가장 싫어하는 거리는?',
     choices: ['찻길', '걱정거리', '지름길', '골목길'],
@@ -886,14 +887,6 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "벌금은 많을수록 손해, '금=귀함' 동음이의 트릭",
   },
   {
-    id: 'wit-a-two-coins-110',
-    category: '재치',
-    question: '동전 둘 합 600원, 하나는 500원이 아니다. 무슨 동전?',
-    choices: ['불가능', '100·100', '500·100', '50·550'],
-    correctIndex: 2,
-    note: "한 개'만' 500원 아니란 말, 나머지는 500원이라 500+100",
-  },
-  {
     id: 'wit-a-clean-dirty',
     category: '재치',
     question: '불은 불인데 뜨겁지 않은 불은?',
@@ -942,22 +935,6 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: '수탉은 알을 못 낳음, 굴러떨어질 알이 없음.',
   },
   {
-    id: 'logic-a-socks-dark',
-    category: '재치',
-    question: '깜깜한데 검정·흰 양말서 같은 색 한 켤레, 최소?',
-    choices: ['3짝', '2짝', '4짝', '10짝'],
-    correctIndex: 0,
-    note: '색 두 종류→3짝이면 반드시 같은 색 2짝(비둘기집).',
-  },
-  {
-    id: 'logic-a-broken-watch',
-    category: '재치',
-    question: '멈춘 시계와 1분 느린 시계 중 더 자주 맞는 건?',
-    choices: ['멈춘 시계', '느린 시계', '둘 다 같다', '항상 느린 것'],
-    correctIndex: 0,
-    note: '멈춘 시계는 하루 2번 정확, 느린 건 720일에 1번.',
-  },
-  {
     id: 'logic-a-train-smoke',
     category: '재치',
     question: '동쪽으로 달리는 전기기차의 연기는 어디로?',
@@ -974,7 +951,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: '배가 물과 함께 떠올라 잠기는 칸 수 그대로.',
   },
   {
-    id: 'mix-a-flower-city',
+    id: 'pun-grows-in-cold',
     category: '재치',
     question: '추울수록 키가 자라는 것은?',
     choices: ['고드름', '나무', '대나무', '얼음'],
@@ -1046,7 +1023,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: '8을 눕히면 무한대(∞) 기호가 된다.',
   },
   {
-    id: 'pun-d-summer-drink',
+    id: 'pun-sejong-milk',
     category: '말장난',
     question: '세종대왕이 만든 우유는?',
     choices: ['딸기우유', '아야어여 우유', '바나나우유', '초코우유'],
@@ -1054,7 +1031,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "한글 모음 '아야어여오요우유'를 활용한 말장난.",
   },
   {
-    id: 'pun-d-uncle-job',
+    id: 'pun-mom-lost',
     category: '말장난',
     question: '엄마가 길을 잃으면?',
     choices: ['길치', '맘마미아', '마마보이', '미아'],
@@ -1070,7 +1047,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "하늘의 '구름'을 빵으로 본 합성어",
   },
   {
-    id: 'pun-d-coffee-honest',
+    id: 'pun-raw-duck',
     category: '말장난',
     question: '오리를 생으로 먹으면?',
     choices: ['회오리', '오리탕', '훈제오리', '오리구이'],
@@ -1118,7 +1095,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "'새옹지마'의 '새'를 새(鳥)로",
   },
   {
-    id: 'pun-d-painter-color',
+    id: 'pun-inedible-bap',
     category: '말장난',
     question: '밥은 밥인데 못 먹는 밥은?',
     choices: ['톱밥', '주먹밥', '볶음밥', '김밥'],
@@ -1134,7 +1111,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "입으로 부는 '휘파람'의 '파람'",
   },
   {
-    id: 'wit-b-hot-dog',
+    id: 'pun-hottest-dog',
     category: '말장난',
     question: '세상에서 가장 더운 개는?',
     choices: ['핫도그', '삽살개', '진돗개', '풍산개'],
@@ -1150,7 +1127,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "'웃음꽃'을 진짜 꽃처럼",
   },
   {
-    id: 'wit-b-king-bread',
+    id: 'pun-saddest-star',
     category: '말장난',
     question: '세상에서 가장 슬픈 별은?',
     choices: ['샛별', '이별', '북극성', '별똥별'],
@@ -1166,7 +1143,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "'화'를 화남으로 읽은 화채",
   },
   {
-    id: 'wit-b-thin-book',
+    id: 'pun-poorest-king',
     category: '말장난',
     question: '세상에서 가장 가난한 왕은?',
     choices: ['폭군', '최저임금', '대왕', '상감마마'],
@@ -1174,7 +1151,7 @@ export const NONSENSE_POOL: readonly NonsenseQuestion[] = [
     note: "왕을 뜻하는 '임금'을 급여 '임금'으로 바꾼 말장난.",
   },
   {
-    id: 'logic-b-broken-window',
+    id: 'pun-unfair-shape',
     category: '말장난',
     question: '세상에서 가장 억울한 도형은?',
     choices: ['삼각형', '원', '사각형', '마름모'],
@@ -1422,20 +1399,20 @@ const EXCLUSIVE_GROUPS: Readonly<Record<string, readonly string[]>> = {
   'laugh-template': [
     'pun-laughing-cow',
     'pun-a-radish-laugh',
-    'pun-a-sheep-yes',
+    'pun-banana-laugh',
     'pun-a-bread-greeting',
   ],
   // "X가 길을 잃으면?" 동일 템플릿 + 보기 3개(길치·마마보이·미아) 공유.
-  'lost-template': ['pun-dad-lost', 'pun-d-uncle-job'],
+  'lost-template': ['pun-dad-lost', 'pun-mom-lost'],
   // 수건·걸레·비누 — "닦을수록/씻을수록/말리며" 계열에 서로가 서로의 오답으로 등장.
   'towel-rag-soap': ['logic-b-wet-while-drying', 'pun-c-dirty-clean', 'mix-a-soap-thin'],
   // "정답은 실제 견종이 아니라 -개로 끝나는 단어" 트릭이 한 번 공개되면 나머지는
   // 보기에서 견종을 지우기만 하면 풀린다. 오답 3개(진돗개·삽살개·풍산개)도 공유.
-  'dog-suffix': ['pun-c-king-fall', 'wit-b-hot-dog', 'pun-c-meat-dog'],
+  'dog-suffix': ['pun-prettiest-dog', 'pun-hottest-dog', 'pun-meat-companion-dog'],
   // "X가 좋아하는/싫어하는 도시는?" + 도시명 동음이의 — 앞 둘은 오답(뉴욕·런던)도 공유.
   'city-pun': ['pun-b-baker-city', 'pun-g-veg-city-sydney', 'pun-g-drinker-city-cheongju'],
   // "세상에서 가장 빠른 X는?" + "X로 끝나는 의태어" 동일 기법.
-  'fastest-template': ['pun-fast-chicken', 'pun-c-coldest-sea', 'pun-c-grape-laugh'],
+  'fastest-template': ['pun-fast-chicken', 'pun-fastest-bird', 'pun-fastest-ricecake'],
   // 음료 3형제 — 보기 3개를 공유하고 judge의 정답이 angry의 오답이라 서로를 소거한다.
   'drink-pun': ['pun-b-judge-drink', 'wit-b-angry-drink', 'pun-a-horse-tea'],
   // "가장 추운/뜨거운 바다" — 반대 형용사에 "정답만 실제 바다가 아님"이라는 같은 트릭.

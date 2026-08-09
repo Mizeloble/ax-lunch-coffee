@@ -3,6 +3,7 @@ import {
   addPlayer,
   clearCharge,
   clearMarbleTilt,
+  clearRoundTimers,
   clearReaction,
   clearTrivia,
   deleteRoom,
@@ -113,9 +114,10 @@ export function attachSocketHandlers(io: IO) {
       // without this a reloaded player would sit on the "아직!" screen for the rest
       // of the round. Still never sent early — the goAt check keeps the anti-cheat.
       if (room.reaction && Date.now() >= room.reaction.goAt) {
+        // Remaining window, not the original one — a rejoin halfway through the
+        // tap window shouldn't hand this client a fresh 1.5s of screen time.
         socket.emit('reaction:go', {
-          goAt: room.reaction.goAt,
-          deadlineAt: room.reaction.deadlineAt,
+          windowMs: Math.max(0, room.reaction.deadlineAt - Date.now()),
         });
       }
 
@@ -243,6 +245,7 @@ export function attachSocketHandlers(io: IO) {
         clearReaction(room);
         clearTrivia(room);
         clearMarbleTilt(room);
+        clearRoundTimers(room);
         room.status = 'lobby';
         room.currentRound = undefined;
         touch(room);
@@ -381,6 +384,7 @@ export function attachSocketHandlers(io: IO) {
       clearReaction(room);
       clearTrivia(room);
       clearMarbleTilt(room);
+      clearRoundTimers(room);
       room.status = 'lobby';
       room.currentRound = undefined;
       touch(room);

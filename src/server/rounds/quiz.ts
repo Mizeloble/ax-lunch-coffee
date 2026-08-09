@@ -9,6 +9,7 @@ import {
 import { TRIVIA_POOL_SORTED } from '../../games/trivia/questions';
 import { NONSENSE_POOL_SORTED } from '../../games/nonsense/questions';
 import { computeRunningScores } from '../../games/trivia/scoring';
+import { seededTieRank } from '../../lib/rng';
 import { GAME } from '../../lib/constants';
 import { type GameId } from '../../games/types';
 import type { TriviaPerPlayerAnswers } from '../../games/types';
@@ -86,10 +87,12 @@ export async function runQuizRound(io: IO, room: RoomState) {
   // can rule out most of the tail (three palindrome questions can't share a round),
   // and the picker then drops freshness before it drops the sibling rule, repeating
   // a question. Wrapping a little early costs nothing; the bag is being emptied anyway.
-  if (pool.length - served.length < GAME.TRIVIA_QUESTION_COUNT + GAME.TRIVIA_WRAP_MARGIN) {
-    served.length = 0;
-  }
-  const excludeIds = [...served];
+  // Decide the wrap without touching room state: a round that dies before it
+  // produces a result must not have consumed — or reset — the bag. The room's
+  // list is only rewritten in `finishHandler`.
+  const wrapping =
+    pool.length - served.length < GAME.TRIVIA_QUESTION_COUNT + GAME.TRIVIA_WRAP_MARGIN;
+  const excludeIds = wrapping ? [] : [...served];
 
   const seed = (Math.random() * 0x7fffffff) | 0;
   const plan = buildQuizPlan(seed, pool, excludeIds);
@@ -99,6 +102,13 @@ export async function runQuizRound(io: IO, room: RoomState) {
   }
 
   const loserCount = effectiveLoserCount(room.loserCount, connectedPlayers.length);
+  // Round roster, snapshotted once: `game:start`, `currentRound.players` and the
+  // result must all describe the same set even as the room's own list changes.
+  const roundPlayers = connectedPlayers.map((p) => ({
+    playerToken: p.playerToken,
+    nickname: p.nickname,
+    color: p.color,
+  }));
   const startAt = Date.now() + GAME.COUNTDOWN_MS;
   const openAts = plan.schedule.openAtOffsets.map((off) => startAt + off);
   const closeAts = plan.schedule.closeAtOffsets.map((off) => startAt + off);
@@ -127,7 +137,7 @@ export async function runQuizRound(io: IO, room: RoomState) {
     losers: [] as string[],
     data: introData,
   };
-  room.currentRound = { gameId, seed, startAt, loserCount, replay: introReplay };
+  room.currentRound = { gameId, seed, startAt, loserCount, players: roundPlayers, replay: introReplay };
 
   // Pre-allocate per-player answer slots so the `trivia:answer` handler can no-op
   // for unknown tokens. Each entry mutates in place.
@@ -179,7 +189,7 @@ export async function runQuizRound(io: IO, room: RoomState) {
     room.servedQuestions ??= {};
     room.servedQuestions[gameId] = [...excludeIds, ...plan.questions.map((q) => q.id)];
 
-    room.currentRound = { gameId, seed, startAt, loserCount, replay };
+    room.currentRound = { gameId, seed, startAt, loserCount, players: roundPlayers, replay };
     clearTrivia(room);
     room.status = 'result';
     io.to(room.id).emit('state', publicRoomState(room));
@@ -203,8 +213,14 @@ export async function runQuizRound(io: IO, room: RoomState) {
       }
       return { playerToken: p.playerToken, score: r.cumulative[qi] ?? 0, combo };
     });
+    // Same tie-break as the final ranking. Token order here would show a different
+    // leader than the result screen in any room where several players sit at 0
+    // (manual players always do), which reads as the ranking changing at the end.
+    const tieRank = seededTieRank(seed, connectedPlayers.map((p) => p.playerToken));
     standings.sort((a, b) =>
-      a.score !== b.score ? b.score - a.score : a.playerToken < b.playerToken ? -1 : 1,
+      a.score !== b.score
+        ? b.score - a.score
+        : (tieRank.get(a.playerToken) ?? 0) - (tieRank.get(b.playerToken) ?? 0),
     );
     // The reveal channel: this question's answer travels only now, not at game:start.
     io.to(room.id).emit('trivia:standings', {
@@ -318,16 +334,12 @@ export async function runQuizRound(io: IO, room: RoomState) {
     durationMs: plan.durationMs,
     loserCount,
     replay: introData,
-    players: connectedPlayers.map((p) => ({
-      playerToken: p.playerToken,
-      nickname: p.nickname,
-      color: p.color,
-    })),
+    players: roundPlayers,
   });
 
   setTimeout(() => {
     if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
     room.status = 'playing';
     io.to(room.id).emit('state', publicRoomState(room));
-  }, GAME.COUNTDOWN_MS);
+  }, Math.max(0, startAt - Date.now()));
 }

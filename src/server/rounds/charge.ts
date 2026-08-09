@@ -9,12 +9,39 @@ import type { IO } from './shared';
  * clients can render gauges, then runs the round with chargeRatios derived from
  * each player's tap total. Manual (no-phone) players default to a neutral 50%.
  */
+/**
+ * Tap totals → 0..1 charge ratio per player. Pure so it can be tested without a
+ * socket: this is where a cap slip or a missing manual default would quietly
+ * skew every cheered race, and the round runner around it isn't reachable from
+ * a unit test.
+ */
+export function computeChargeRatios(
+  players: { playerToken: string; manual?: boolean }[],
+  counts: Map<string, number>,
+): Record<string, number> {
+  const ratios: Record<string, number> = {};
+  for (const p of players) {
+    if (p.manual) {
+      ratios[p.playerToken] = GAME.CHARGE_MANUAL_DEFAULT;
+      continue;
+    }
+    const raw = counts.get(p.playerToken) ?? 0;
+    const safe = Number.isFinite(raw) ? Math.max(0, Math.min(raw, GAME.CHARGE_TAP_CAP)) : 0;
+    ratios[p.playerToken] = safe / GAME.CHARGE_TAP_CAP;
+  }
+  return ratios;
+}
+
 export function startChargingPhase(io: IO, room: RoomState) {
   const endsAt = Date.now() + GAME.CHARGE_MS;
   room.status = 'charging';
 
   const tickTimer = setInterval(() => {
     if (!room.charge) return;
+    // Stop updating the gauges once the countdown reads 0. Late packets still
+    // count toward the result (that's what the tail is for), but showing bars
+    // creep upward after "끝!" reads as the phase not actually being over.
+    if (Date.now() > room.charge.endsAt) return;
     const totals: Record<string, number> = {};
     for (const [token, count] of room.charge.counts) totals[token] = count;
     io.to(room.id).emit('charge:state', { totals, cap: GAME.CHARGE_TAP_CAP });
@@ -33,15 +60,7 @@ export function startChargingPhase(io: IO, room: RoomState) {
     const counts = room.charge?.counts ?? new Map<string, number>();
     clearCharge(room);
 
-    const chargeRatios: Record<string, number> = {};
-    for (const p of room.players.values()) {
-      if (p.manual) {
-        chargeRatios[p.playerToken] = GAME.CHARGE_MANUAL_DEFAULT;
-      } else {
-        const c = counts.get(p.playerToken) ?? 0;
-        chargeRatios[p.playerToken] = Math.min(c, GAME.CHARGE_TAP_CAP) / GAME.CHARGE_TAP_CAP;
-      }
-    }
+    const chargeRatios = computeChargeRatios([...room.players.values()], counts);
 
     // The `start` handler wraps its round runners in try/catch precisely so a
     // throw can't leave the room stuck half-started — but this call runs from a

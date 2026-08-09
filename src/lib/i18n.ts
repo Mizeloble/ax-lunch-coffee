@@ -361,9 +361,8 @@ export const ko = {
     /** Lobby GameIntro badge for pre-charge games (no trailing "!"). */
     badge: '응원 충전',
     title: '응원 충전!',
-    subtitle: '5초 안에 미친듯이 탭하세요',
+    subtitle: (sec: number) => `${sec}초 안에 미친듯이 탭하세요`,
     tapHint: '탭!',
-    secondsLeft: (s: number) => `${s}초`,
     myGauge: '내 응원',
     avgGauge: '전체 평균',
     // 서버는 manual 참가자에게 고정값(CHARGE_MANUAL_DEFAULT)을 주지 평균을 주지 않는다 —

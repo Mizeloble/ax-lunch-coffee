@@ -232,7 +232,9 @@ export function MarbleRenderer({
         mainPane.shake = Math.max(mainPane.shake, isB1 ? 1.8 : 0.9);
         insetPane.shake = Math.max(insetPane.shake, isB1 ? 1.8 : 0.9);
       }
-      lastProcessedFrame = idx;
+      // Monotonic: if the clock jumps backwards (offset correction) `idx` can go
+      // back, and rewinding this would replay the fanfare bursts a second time.
+      lastProcessedFrame = Math.max(lastProcessedFrame, idx);
 
       // Haptic triggers — fire once each.
       if (!firedMyFinishHaptic && myIdx >= 0 && replay.finishFrames[myIdx] >= 0 && idx >= replay.finishFrames[myIdx]) {
@@ -337,9 +339,13 @@ export function MarbleRenderer({
       mainPane.shake = Math.max(0, mainPane.shake - dtSec * 3);
       insetPane.shake = Math.max(0, insetPane.shake - dtSec * 3);
 
-      if (elapsed < durationMs + 1500) {
-        raf = requestAnimationFrame(draw);
-      }
+      // Keep the loop alive until unmount instead of stopping at the end of the
+      // replay. Stopping was a one-way door: a clock-offset correction landing
+      // mid-race pushes `elapsed` past the end for a single frame, and the canvas
+      // then stayed frozen there for the rest of the round. Past the end every
+      // frame just redraws the clamped final frame, and the result screen
+      // unmounts us shortly after.
+      raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
 

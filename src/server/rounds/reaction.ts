@@ -30,6 +30,13 @@ export async function runReactionRound(io: IO, room: RoomState) {
   }
 
   const loserCount = effectiveLoserCount(room.loserCount, connectedPlayers.length);
+  // Round roster, snapshotted once: `game:start`, `currentRound.players` and the
+  // result must all describe the same set even as the room's own list changes.
+  const roundPlayers = connectedPlayers.map((p) => ({
+    playerToken: p.playerToken,
+    nickname: p.nickname,
+    color: p.color,
+  }));
   const startAt = Date.now() + GAME.COUNTDOWN_MS;
   const goAt = startAt + intro.goAtOffsetMs;
   const deadlineAt = goAt + GAME.REACTION_DEADLINE_MS;
@@ -48,7 +55,7 @@ export async function runReactionRound(io: IO, room: RoomState) {
     // broadcast, which would leak the GO time before it fires.
     data: { offsets: {} as Record<string, number | null> },
   };
-  room.currentRound = { gameId: 'reaction', seed, startAt, loserCount, replay: introReplay };
+  room.currentRound = { gameId: 'reaction', seed, startAt, loserCount, players: roundPlayers, replay: introReplay };
 
   // Schedule final result computation. Stored on room so reset() can cancel it.
   const finishTimer = setTimeout(async () => {
@@ -93,19 +100,19 @@ export async function runReactionRound(io: IO, room: RoomState) {
     // overwrite with absolute wall-clock and carry tapOffsets through so the
     // result screen can show each player's reaction time.
     replay.data = { goAt, deadlineAt, offsets: tapOffsets };
-    room.currentRound = { gameId: 'reaction', seed, startAt, loserCount, replay };
+    room.currentRound = { gameId: 'reaction', seed, startAt, loserCount, players: roundPlayers, replay };
     clearReaction(room);
     room.status = 'result';
     io.to(room.id).emit('state', publicRoomState(room));
     emitResult(io, room, replay);
   }, deadlineAt + GAME.REACTION_TAIL_MS - Date.now());
 
-  // The GO signal: emitted AT goAt, never before. Clients flip to the GO screen
-  // on receipt; the payload's timestamps let them keep deriving phases (deadline,
-  // tabulating) off their local clock afterwards.
+  // The GO signal: emitted AT goAt, never before, and with no timestamps — the
+  // client anchors on receipt (see ReactionGoPayload). The server keeps its own
+  // absolute window; this only tells the client how long to keep the screen live.
   const goTimer = setTimeout(() => {
     if (!getRoom(room.id) || room.reaction?.goAt !== goAt) return;
-    io.to(room.id).emit('reaction:go', { goAt, deadlineAt });
+    io.to(room.id).emit('reaction:go', { windowMs: GAME.REACTION_DEADLINE_MS });
   }, goAt - Date.now());
 
   room.reaction = {
@@ -130,18 +137,14 @@ export async function runReactionRound(io: IO, room: RoomState) {
     // offsets stays empty here — populated on the post-round state broadcast.
     // No goAt/deadlineAt: the GO time arrives via `reaction:go` when it fires.
     replay: { offsets: {} as Record<string, number | null> },
-    players: connectedPlayers.map((p) => ({
-      playerToken: p.playerToken,
-      nickname: p.nickname,
-      color: p.color,
-    })),
+    players: roundPlayers,
   });
 
   setTimeout(() => {
     if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
     room.status = 'playing';
     io.to(room.id).emit('state', publicRoomState(room));
-  }, GAME.COUNTDOWN_MS);
+  }, Math.max(0, startAt - Date.now()));
 }
 
 /**

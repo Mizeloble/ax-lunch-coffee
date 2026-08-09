@@ -176,15 +176,22 @@ export function TriviaRenderer({
     return computeRunningScores(answers, correctIndices);
   }, [myAnswers, myPickOffsets, revealed]);
 
-  // Cumulative score = total points for questions whose reveal has begun.
+  // Cumulative score = total points through the last question we can actually
+  // score. Gated on the *answer* having arrived, not just on the local clock
+  // passing closeAt: the reveal packet is a network round trip behind, and
+  // counting a question before it lands made the header drop to 0 and the combo
+  // badge blink out at every reveal boundary. A question whose packet was lost
+  // outright simply stops the count there rather than corrupting it.
   const revealedThrough = useMemo(() => {
     const { closeAtOffsets } = schedule;
     let last = -1;
     for (let i = 0; i < replay.questions.length; i++) {
-      if (now >= startAt + closeAtOffsets[i]) last = i;
+      if (now < startAt + closeAtOffsets[i]) break;
+      if (revealed[i] == null) break;
+      last = i;
     }
     return last;
-  }, [now, startAt, schedule, replay]);
+  }, [now, startAt, schedule, replay, revealed]);
 
   const myScore = revealedThrough >= 0 ? myRunning.cumulative[revealedThrough] : 0;
   // 점수 규칙(속도 + 콤보 보너스)이 UI 어디에도 없어서 "왜 이겼는지"를 아무도 몰랐다.

@@ -105,6 +105,8 @@ export type RoomState = {
     startAt: number;
     /** Effective penalty count this round ran with (post-clamp). */
     loserCount: number;
+    /** Roster snapshotted at round start — the round's own truth, not the room's. */
+    players: { playerToken: string; nickname: string; color: string }[];
     replay: ReplayPayload;
   };
   /**
@@ -126,6 +128,8 @@ export type RoomState = {
    * must dispose its sim instead of overwriting the new round's state.
    */
   roundEpoch: number;
+  /** Phase-transition timers for precompute rounds (no dedicated state object). */
+  roundTimers?: NodeJS.Timeout[];
   lastActivityAt: number;
   cleanupTimer?: NodeJS.Timeout;
 };
@@ -149,6 +153,12 @@ export function clearTrivia(room: RoomState) {
   clearTimeout(room.trivia.finishTimer);
   for (const t of room.trivia.standingsTimers) clearTimeout(t);
   room.trivia = undefined;
+}
+
+export function clearRoundTimers(room: RoomState) {
+  if (!room.roundTimers) return;
+  for (const t of room.roundTimers) clearTimeout(t);
+  room.roundTimers = undefined;
 }
 
 export function clearMarbleTilt(room: RoomState) {
@@ -247,6 +257,7 @@ export function deleteRoom(roomId: string) {
   clearReaction(r);
   clearTrivia(r);
   clearMarbleTilt(r);
+  clearRoundTimers(r);
   rooms.delete(roomId);
 }
 
@@ -396,6 +407,7 @@ export function publicRoomState(room: RoomState) {
           startAt: room.currentRound.startAt,
           durationMs: room.currentRound.replay.durationMs,
           loserCount: room.currentRound.loserCount,
+          players: room.currentRound.players,
           // Exposed for mid-play reconnects (reaction/quiz intro payloads are
           // answer-free by construction — see rounds/reaction.ts and rounds/quiz.ts).
           // For marble, `data` is large frame data — only include intro-only payloads.

@@ -17,6 +17,13 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
 
   const seed = (Math.random() * 0x7fffffff) | 0;
   const loserCount = effectiveLoserCount(room.loserCount, connectedPlayers.length);
+  // Round roster, snapshotted once: `game:start`, `currentRound.players` and the
+  // result must all describe the same set even as the room's own list changes.
+  const roundPlayers = connectedPlayers.map((p) => ({
+    playerToken: p.playerToken,
+    nickname: p.nickname,
+    color: p.color,
+  }));
   const epoch = ++room.roundEpoch;
   // Mark as countdown immediately so a second click is ignored even while WASM loads.
   // Drop the finished round's `currentRound` in the same breath: clients rebuild
@@ -48,7 +55,7 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
   if (!getRoom(room.id) || room.status !== 'countdown' || room.roundEpoch !== epoch) return;
 
   const startAt = Date.now() + GAME.COUNTDOWN_MS;
-  room.currentRound = { gameId: room.gameId, seed, startAt, loserCount, replay };
+  room.currentRound = { gameId: room.gameId, seed, startAt, loserCount, players: roundPlayers, replay };
   touch(room);
   io.to(room.id).emit('state', publicRoomState(room));
   io.to(room.id).emit('countdown', { startAt });
@@ -59,19 +66,24 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
     durationMs: replay.durationMs,
     loserCount,
     replay: replay.data,
-    players: connectedPlayers.map((p) => ({ playerToken: p.playerToken, nickname: p.nickname, color: p.color })),
+    players: roundPlayers,
   });
 
-  setTimeout(() => {
-    if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
-    room.status = 'playing';
-    io.to(room.id).emit('state', publicRoomState(room));
-  }, GAME.COUNTDOWN_MS);
+  // Tracked on the room so `deleteRoom`/`reset` can cancel them. Untracked, their
+  // closures pinned the whole frame track — the largest object in the process —
+  // for the length of the race after the room was already gone.
+  room.roundTimers = [
+    setTimeout(() => {
+      if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
+      room.status = 'playing';
+      io.to(room.id).emit('state', publicRoomState(room));
+    }, Math.max(0, startAt - Date.now())),
 
-  setTimeout(() => {
-    if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
-    room.status = 'result';
-    io.to(room.id).emit('state', publicRoomState(room));
-    emitResult(io, room, replay);
-  }, GAME.COUNTDOWN_MS + replay.durationMs);
+    setTimeout(() => {
+      if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
+      room.status = 'result';
+      io.to(room.id).emit('state', publicRoomState(room));
+      emitResult(io, room, replay);
+    }, Math.max(0, startAt + replay.durationMs - Date.now())),
+  ];
 }

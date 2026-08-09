@@ -3349,7 +3349,3 @@ export const TRIVIA_POOL_SORTED: readonly TriviaQuestion[] = [...TRIVIA_POOL]
     const groups = TRIVIA_GROUPS_BY_ID.get(q.id);
     return groups ? { ...q, exclusiveGroups: groups } : q;
   });
-
-export function getQuestionById(id: string): TriviaQuestion | undefined {
-  return TRIVIA_POOL.find((q) => q.id === id);
-}

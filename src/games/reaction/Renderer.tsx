@@ -22,10 +22,10 @@ type Phase = 'ready' | 'go' | 'tabulating';
  * itself (pre-announcing it let a devtools one-liner schedule an inhuman tap).
  * That signal is received by RoomClient and handed down as `goTimes` — a mid-round
  * reconnect gets it replayed before this component mounts, so the subscription has
- * to live above it. After receipt, phases keep deriving off the local clock via the
- * payload's timestamps. Server is the source of truth for tapOffsets — payload
- * carries no timestamp. Background-tab guard: visibility !== 'visible' suppresses
- * tap input.
+ * to live above it. It carries no timestamps: receipt is the anchor, and the window
+ * runs `windowMs` from there. Server is the source of truth for tapOffsets — the
+ * tap payload carries no timestamp either. Background-tab guard: visibility !==
+ * 'visible' suppresses tap input.
  */
 export function ReactionRenderer({
   startAt,
@@ -41,6 +41,13 @@ export function ReactionRenderer({
   myPlayerToken: string | null;
 }) {
   const [now, setNow] = useState(() => serverNow());
+  // The GO event carries no timestamps (see ReactionGoPayload) — receipt *is* the
+  // start. Stamped once, when the payload first arrives.
+  const goAnchorRef = useRef<{ at: number; windowMs: number } | null>(null);
+  if (goTimes && !goAnchorRef.current) {
+    goAnchorRef.current = { at: serverNow(), windowMs: goTimes.windowMs };
+  }
+  const goAnchor = goTimes ? goAnchorRef.current : null;
   // Local snapshot of "my reaction time" — server is authoritative for ranking but we
   // surface this immediately so the user sees their effort acknowledged.
   const [myOffsetMs, setMyOffsetMs] = useState<number | null>(null);
@@ -49,6 +56,10 @@ export function ReactionRenderer({
   // persistent "위반 · 대기" badge so users don't think the game is bugged
   // when later taps stop responding.
   const [falseStartLocked, setFalseStartLocked] = useState(false);
+  // Mirrors `tappedRef` in React state: only the first tap counts, so once it's
+  // spent the surface must *look* spent too. Unlocking after a false start was
+  // re-enabling a button that silently ignored every further press.
+  const [tapped, setTapped] = useState(false);
   const tappedRef = useRef(false);
 
   // RAF tick (drives phase transition + countdown numerals)
@@ -80,12 +91,13 @@ export function ReactionRenderer({
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     if (tappedRef.current) return;
     tappedRef.current = true;
+    setTapped(true);
     const tapAt = serverNow();
 
     // No GO signal yet (or tapped before it): false start. A tap racing the GO
     // packet over the wire can still be recorded as valid by the server — the
     // ack below unlocks the UI in that case, mirroring the valid-tap branch.
-    if (goTimes == null || tapAt < goTimes.goAt) {
+    if (goAnchor == null) {
       // false start — visual + haptic, no offset surfaced
       haptics.reactionFalseStart();
       setFalseStartFlash((k) => k + 1);
@@ -99,13 +111,15 @@ export function ReactionRenderer({
       });
       return;
     }
-    if (tapAt > goTimes.deadlineAt) return; // window closed
+    if (tapAt > goAnchor.at + goAnchor.windowMs) return; // window closed
 
     haptics.reactionGo();
     // Local estimate for instant feedback only — the server ack below replaces it
     // with the recorded offset (the exact number the result screen will show), so
     // the in-game badge and the final ranking can't disagree by latency/clock skew.
-    setMyOffsetMs(Math.max(0, Math.round(tapAt - goTimes.goAt)));
+    // Anchored on when GO reached us, so this under-reads by one-way latency —
+    // the ack below replaces it with the server's recorded offset.
+    setMyOffsetMs(Math.max(0, Math.round(tapAt - goAnchor.at)));
     getSocket().emit('reaction:tap', (res: ReactionTapAck) => {
       if (!res?.recorded) return; // keep the local estimate (ack lost / tap ignored)
       if (res.offsetMs < GAME.REACTION_MIN_HUMAN_RT_MS) {
@@ -121,11 +135,7 @@ export function ReactionRenderer({
   }
 
   const phase: Phase =
-    goTimes == null || now < goTimes.goAt
-      ? 'ready'
-      : now < goTimes.deadlineAt
-        ? 'go'
-        : 'tabulating';
+    goAnchor == null ? 'ready' : now < goAnchor.at + goAnchor.windowMs ? 'go' : 'tabulating';
 
   // Saturating bar — fills to ~85% by REACTION_PRE_GO_MIN_MS (1500ms) and creeps
   // asymptotically toward 100% afterwards. The visual gap between "almost full"
@@ -144,7 +154,7 @@ export function ReactionRenderer({
       <button
         type="button"
         onPointerDown={handleTap}
-        disabled={phase === 'tabulating' || falseStartLocked}
+        disabled={phase === 'tabulating' || falseStartLocked || tapped}
         aria-label={ko.reaction.tapHint}
         className="absolute inset-0 flex flex-col items-center justify-center text-center transition-colors duration-100"
         style={{

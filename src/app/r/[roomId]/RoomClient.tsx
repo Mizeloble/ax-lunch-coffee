@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
 import { getSocket, disposeSocket } from '@/lib/socket-client';
-import { serverNow, syncServerClock } from '@/lib/server-clock';
+import { serverNow, startClockResync, syncServerClock } from '@/lib/server-clock';
 import { useWakeLock } from '@/lib/useWakeLock';
 import { loadIdentity, saveIdentity } from '@/lib/nickname-store';
 import {
@@ -163,7 +163,12 @@ export default function RoomClient({
       // too large to ride on state (marble's frame track) carry no `replay` here —
       // they fall back to the waiting screen instead.
       const round = s.currentRound;
-      if ((s.status === 'countdown' || s.status === 'playing') && round?.replay) {
+      // Only rebuild for players the round actually includes. A spectator who
+      // joined after it started can't score — handing them the game screen just
+      // means every input they make comes back rejected.
+      const inRound =
+        !!round && (!mt || round.players.some((p) => p.playerToken === mt));
+      if ((s.status === 'countdown' || s.status === 'playing') && round?.replay && inRound) {
         const held = useRoomStore.getState().gameStart;
         if (held?.startAt !== round.startAt) {
           setGameStart({
@@ -175,11 +180,9 @@ export default function RoomClient({
             durationMs: round.durationMs,
             loserCount: round.loserCount,
             replay: round.replay,
-            players: s.players.map((p) => ({
-              playerToken: p.playerToken,
-              nickname: p.nickname,
-              color: p.color,
-            })),
+            // The round's own roster, not the room's — `s.players` has already
+            // dropped anyone evicted after grace and picked up spectators.
+            players: round.players,
           });
         }
       }
@@ -260,6 +263,9 @@ export default function RoomClient({
     // Already connected when this mounts (singleton socket surviving a route
     // change) → `connect` won't fire again, so kick off the first sync here.
     if (socket.connected) void syncServerClock(socket);
+    // And keep re-measuring: a clock that moves mid-round (NTP correction, wake
+    // from sleep) would otherwise skew every phase until the next reconnect.
+    const stopResync = startClockResync(socket);
     socket.on('disconnect', onDisconnect);
     socket.on('server:shutdown', onServerShutdown);
 
@@ -290,6 +296,7 @@ export default function RoomClient({
       socket.off('reaction:go', onReactionGo);
       socket.off('trivia:resume', onTriviaResume);
       socket.off('error', onErr);
+      stopResync();
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('server:shutdown', onServerShutdown);

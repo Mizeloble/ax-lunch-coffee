@@ -36,6 +36,15 @@ export type PublicRoomState = {
     /** Penalty count this round actually ran with (already clamped to the player
      * count — may differ from the room's `loserCount` setting). */
     loserCount: number;
+    /**
+     * Players as of round start. Needed because `players` at the top level drifts:
+     * someone evicted after the grace window disappears from it, and a spectator
+     * who joined mid-round appears in it. A client rebuilding `game:start` from
+     * this state has to see the round's own roster — otherwise names go blank
+     * mid-race, and anyone not in the round gets a playable-looking screen whose
+     * input the server can only reject.
+     */
+    players: { playerToken: string; nickname: string; color: string }[];
     /** Game-specific intro data exposed for mid-play reconnects (e.g. reaction's goAt/deadlineAt). */
     replay?: unknown;
     /** Present only while status === 'result' — lets a client that missed the
@@ -146,11 +155,18 @@ export type TriviaAnswerAck = { recorded: boolean };
  * Reaction game GO signal, emitted by the server AT goAt — never announced in
  * advance. Pre-announcing goAt (or the round seed it derives from) let a one-line
  * devtools script schedule an inhumanly fast tap; now the earliest possible
- * scripted reaction is bounded by real network latency. Carries the authoritative
- * timestamps so the client can keep rendering phases off its wall clock after
- * receipt.
+ * scripted reaction is bounded by real network latency.
+ *
+ * Deliberately carries no timestamps. An absolute goAt let a script aim its tap
+ * to land just past the 80ms human-reaction floor instead of at whatever its own
+ * latency happened to be — a slower connection could out-aim a faster one. The
+ * client anchors on receipt; the server's own window stays the authority for what
+ * counts, and the ack reports the offset it actually recorded.
  */
-export type ReactionGoPayload = { goAt: number; deadlineAt: number };
+export type ReactionGoPayload = {
+  /** How long the tap window stays open, measured from *receipt* of this event. */
+  windowMs: number;
+};
 
 export type MarbleBoostAck = { accepted: boolean; remaining: number };
 

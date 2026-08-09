@@ -36,6 +36,13 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
   io.to(room.id).emit('state', publicRoomState(room));
 
   const loserCount = effectiveLoserCount(room.loserCount, connectedPlayers.length);
+  // Round roster, snapshotted once: `game:start`, `currentRound.players` and the
+  // result must all describe the same set even as the room's own list changes.
+  const roundPlayers = connectedPlayers.map((p) => ({
+    playerToken: p.playerToken,
+    nickname: p.nickname,
+    color: p.color,
+  }));
   const startAt = Date.now() + GAME.COUNTDOWN_MS;
 
   const sim = new MarbleTiltLiveSim({
@@ -57,7 +64,7 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
           losers,
           data: undefined as unknown,
         };
-        room.currentRound = { gameId: 'marble-tilt', seed, startAt, loserCount, replay };
+        room.currentRound = { gameId: 'marble-tilt', seed, startAt, loserCount, players: roundPlayers, replay };
         room.status = 'result';
         io.to(room.id).emit('state', publicRoomState(room));
         emitResult(io, room, replay);
@@ -97,6 +104,7 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
     seed,
     startAt,
     loserCount,
+    players: roundPlayers,
     replay: { durationMs: intro.durationMsHint, ranking: [], losers: [], data: intro },
   };
   touch(room);
@@ -109,11 +117,7 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
     durationMs: intro.durationMsHint,
     loserCount,
     replay: intro,
-    players: connectedPlayers.map((p) => ({
-      playerToken: p.playerToken,
-      nickname: p.nickname,
-      color: p.color,
-    })),
+    players: roundPlayers,
   });
 
   setTimeout(() => {
@@ -121,5 +125,5 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
     room.status = 'playing';
     io.to(room.id).emit('state', publicRoomState(room));
     sim.start();
-  }, GAME.COUNTDOWN_MS);
+  }, Math.max(0, startAt - Date.now()));
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { ko } from '@/lib/i18n';
 import { GAME } from '@/lib/constants';
@@ -115,15 +115,24 @@ export function ChargePhase() {
   }
 
   // Flush final count when the phase ends (so cap-hit or last few taps reach the server).
+  const flushFinal = useCallback(() => {
+    if (myCountRef.current === lastSentValRef.current) return;
+    lastSentValRef.current = myCountRef.current;
+    getSocket().emit('charge:tick', { count: myCountRef.current });
+  }, []);
   useEffect(() => {
     if (!endsAt) return;
-    const remain = endsAt - now;
-    if (remain > 0) return;
-    if (myCountRef.current !== lastSentValRef.current) {
-      lastSentValRef.current = myCountRef.current;
-      getSocket().emit('charge:tick', { count: myCountRef.current });
-    }
-  }, [endsAt, now]);
+    if (endsAt - now > 0) return;
+    flushFinal();
+  }, [endsAt, now, flushFinal]);
+  // Timer backup for the same flush: the effect above rides the RAF clock, which
+  // browsers freeze in a backgrounded tab — exactly when a player has stopped
+  // watching but their taps still deserve to count.
+  useEffect(() => {
+    if (!endsAt) return;
+    const t = setTimeout(flushFinal, Math.max(0, endsAt - serverNow()) + 30);
+    return () => clearTimeout(t);
+  }, [endsAt, flushFinal]);
 
   if (!endsAt) {
     return (
@@ -133,15 +142,26 @@ export function ChargePhase() {
     );
   }
 
-  const remain = Math.max(0, endsAt - now);
+  // Clamp to the phase length: before the clock sync lands, a phone whose own
+  // clock runs slow would otherwise show a countdown starting above 5.
+  const remain = Math.min(GAME.CHARGE_MS, Math.max(0, endsAt - now));
   const secondsLeft = Math.ceil(remain / 1000);
   const ended = remain <= 0;
 
   // My ratio (use local count for snappy gauge — server already has the cap)
   const myRatio = Math.min(1, myCount / cap);
 
-  // Group average ratio from server totals (excluding manual / 0-touched, fall back to mine)
-  const ratios = Object.values(serverTotals).map((c) => Math.min(1, c / cap));
+  // Group average over *everyone*, the way the race actually computes it: players
+  // who never tapped count as 0 and manual players as the fixed default. Averaging
+  // only the tokens present in `serverTotals` meant two eager tappers out of eight
+  // showed up as a near-full "전체 평균".
+  const ratios = players.map((p) =>
+    p.manual
+      ? GAME.CHARGE_MANUAL_DEFAULT
+      : p.playerToken === myToken
+        ? myRatio
+        : Math.min(1, (serverTotals[p.playerToken] ?? 0) / cap),
+  );
   const avgRatio = ratios.length > 0 ? ratios.reduce((a, b) => a + b, 0) / ratios.length : myRatio;
 
   const me = myToken ? players.find((p) => p.playerToken === myToken) : null;
@@ -157,7 +177,9 @@ export function ChargePhase() {
         <div className="text-xs uppercase tracking-[0.18em] text-amber-400 font-bold">
           {ko.charge.title}
         </div>
-        <div className="mt-1 text-sm text-zinc-300">{ko.charge.subtitle}</div>
+        <div className="mt-1 text-sm text-zinc-300">
+          {ko.charge.subtitle(Math.round(GAME.CHARGE_MS / 1000))}
+        </div>
       </div>
 
       {/* Countdown */}

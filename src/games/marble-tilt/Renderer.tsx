@@ -161,10 +161,20 @@ export function MarbleTiltRenderer({
   // countdown — if we'd kept the mount-time tare, any grip adjustment the user
   // makes during the 3-second countdown would bake into the zero point and
   // bias the marble to one side once the race starts.
+  // Polled rather than scheduled once: `serverNow()` can still be uncorrected when
+  // this mounts (the clock sync is a round trip away), and a one-shot timer sized
+  // from a wrong offset fires mid-race instead of just before the start.
   useEffect(() => {
-    const delay = Math.max(0, startAt - serverNow() - 200);
-    const t = setTimeout(() => tare(), delay);
-    return () => clearTimeout(t);
+    let done = false;
+    const id = setInterval(() => {
+      if (done) return;
+      if (serverNow() >= startAt - 200) {
+        done = true;
+        clearInterval(id);
+        tare();
+      }
+    }, 100);
+    return () => clearInterval(id);
   }, [startAt, tare]);
 
   const triggerBoost = useCallback(() => {

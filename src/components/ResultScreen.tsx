@@ -43,7 +43,11 @@ export function ResultScreen({
     state.players.find((p) => p.playerToken === tk) ??
     gameStart?.players.find((p) => p.playerToken === tk);
 
-  const losers = result.losers
+  // Worst first, matching the race banner that just named them. `result.losers`
+  // arrives in finish order (least-bad first), so showing it as-is flipped the
+  // two names between the reveal and this screen.
+  const losers = [...result.losers]
+    .reverse()
     .map(findPlayer)
     .filter((p): p is NonNullable<typeof p> => !!p);
 
