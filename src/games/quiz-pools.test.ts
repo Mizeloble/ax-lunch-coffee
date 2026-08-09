@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { TRIVIA_POOL, TRIVIA_GROUPS_BY_ID, TRIVIA_POOL_SORTED } from './trivia/questions';
 import { NONSENSE_POOL, NONSENSE_GROUPS_BY_ID, NONSENSE_POOL_SORTED } from './nonsense/questions';
-import { buildQuizPlan } from './trivia/server';
+import { buildQuizPlan, difficultyQuota, refreshServedBag } from './trivia/server';
 
 // 카피 규칙(questions.ts 헤더 주석: question ~40자, choices 모바일 한 줄, note ≤80자)의
 // 회귀 방지용 하드 리밋. 현행 풀 최대치(question 44 / choice 14 / note 60)에
@@ -89,21 +89,31 @@ describe('trivia sibling families', () => {
     }
   });
 
-  it('serves a party 20 straight rounds with no repeated question', () => {
-    // Mirrors rounds/quiz.ts: snapshot the served list, build, then append.
+  // 200 rounds, not 20. The old 20-round version passed while the bag was broken:
+  // the hard tier (54 questions, exactly one slot per round) empties at round 54,
+  // and a whole-pool refresh check didn't fire until round 71 — so rounds 54-70
+  // each re-served a hard question the room had already seen. Any bound below ~54
+  // never reaches the tier that actually binds. 200 clears every tier's cycle
+  // (hard ~53, easy ~74, normal ~78) several times over.
+  it('serves a party 200 straight rounds with no repeat and no broken mix', () => {
+    // Mirrors rounds/quiz.ts exactly: refresh the bag, snapshot, build, append.
     const levelOf = new Map(TRIVIA_POOL.map((q) => [q.id, q.difficulty]));
     for (const room of [0, 1, 2, 3, 4]) {
-      const served: string[] = [];
-      for (let r = 0; r < 20; r++) {
-        const qs = buildQuizPlan(room * 1009 + r * 7919, TRIVIA_POOL_SORTED, served).questions;
+      let served: string[] = [];
+      for (let r = 0; r < 200; r++) {
+        const snapshot = refreshServedBag(TRIVIA_POOL_SORTED, served, 5, 4);
+        const qs = buildQuizPlan(room * 1009 + r * 7919, TRIVIA_POOL_SORTED, snapshot).questions;
+        expect(qs.length, `room ${room} round ${r}`).toBe(5);
         for (const q of qs) {
-          expect(served, `room ${room} round ${r} repeated ${q.id}`).not.toContain(q.id);
+          expect(snapshot, `room ${room} round ${r} repeated ${q.id}`).not.toContain(q.id);
         }
-        // Freshness must not come at the cost of the difficulty mix.
+        // Freshness must not come at the cost of the difficulty mix — the picker
+        // drops freshness *before* the quota, so a starved tier shows up here
+        // as a repeat rather than as a skew. Both are asserted.
         const levels = qs.map((q) => levelOf.get(q.id)!);
         const count = (d: number) => levels.filter((x) => x === d).length;
         expect([count(1), count(2), count(3)], `room ${room} round ${r}`).toEqual([2, 2, 1]);
-        served.push(...qs.map((q) => q.id));
+        served = [...snapshot, ...qs.map((q) => q.id)];
       }
     }
   });
@@ -164,11 +174,11 @@ describe('nonsense sibling families', () => {
   // 다시 나왔다(실제로 재현된 회귀). 소진 직전까지 돌려서 그 경계를 지난다.
   it('serves a party many rounds without repeating or breaking sibling exclusion', () => {
     for (const room of [0, 1, 2]) {
-      const served: string[] = [];
-      for (let r = 0; r < 40; r++) {
-        // rounds/quiz.ts의 셔플백 wrap과 동일한 임계값.
-        if (NONSENSE_POOL_SORTED.length - served.length < 5 + 4) served.length = 0;
-        const snapshot = [...served];
+      let served: string[] = [];
+      for (let r = 0; r < 120; r++) {
+        // rounds/quiz.ts와 같은 함수. 넌센스는 난이도 태그가 없어 티어별 리프레시가
+        // 꺼지고 전체 소진 검사만 남는다 — 그 축퇴가 유지되는지도 여기서 지켜진다.
+        const snapshot = refreshServedBag(NONSENSE_POOL_SORTED, served, 5, 4);
         const qs = buildQuizPlan(room * 1009 + r * 7919, NONSENSE_POOL_SORTED, snapshot).questions;
         expect(qs.length, `room ${room} round ${r}`).toBe(5);
         const seen = new Map<string, string>();
@@ -179,9 +189,61 @@ describe('nonsense sibling families', () => {
             seen.set(g, q.id);
           }
         }
-        served.push(...qs.map((q) => q.id));
+        served = [...snapshot, ...qs.map((q) => q.id)];
       }
     }
+  });
+});
+
+// 셔플백 리프레시 단위 테스트. 위 파티 테스트가 최종 증거지만 200라운드를 돌려야
+// 실패가 보이므로, 경계 자체를 직접 못 박아 둔다.
+describe('shuffle-bag refresh', () => {
+  const idsOf = (level: 1 | 2 | 3) =>
+    TRIVIA_POOL.filter((q) => q.difficulty === level).map((q) => q.id);
+
+  it('keeps the served list untouched while every tier has room', () => {
+    const served = [...idsOf(1).slice(0, 10), ...idsOf(3).slice(0, 10)];
+    expect(refreshServedBag(TRIVIA_POOL_SORTED, served, 5, 4)).toEqual(served);
+  });
+
+  it('drops only the exhausted tier, not the whole history', () => {
+    // Hard tier drained; easy/normal barely touched.
+    const easySeen = idsOf(1).slice(0, 12);
+    const served = [...idsOf(3), ...easySeen];
+    const refreshed = refreshServedBag(TRIVIA_POOL_SORTED, served, 5, 4);
+    expect(refreshed).toEqual(easySeen);
+  });
+
+  it('fires before the picker is forced to repeat a hard question', () => {
+    // Hard quota is 1/round, so the tier must refresh while at least one unseen
+    // hard question is still available — never after it has run out.
+    const hard = idsOf(3);
+    const quota = difficultyQuota(5)[3];
+    for (let seen = 0; seen <= hard.length; seen++) {
+      const served = hard.slice(0, seen);
+      const refreshed = refreshServedBag(TRIVIA_POOL_SORTED, served, 5, 4);
+      const unseenHard = hard.length - refreshed.filter((id) => hard.includes(id)).length;
+      expect(unseenHard, `after ${seen} hard questions served`).toBeGreaterThanOrEqual(quota);
+    }
+  });
+
+  it('wipes everything when the pool as a whole is spent', () => {
+    const all = TRIVIA_POOL.map((q) => q.id);
+    expect(refreshServedBag(TRIVIA_POOL_SORTED, all, 5, 4)).toEqual([]);
+  });
+
+  it('leaves an untagged pool on the original whole-pool rule', () => {
+    const all = NONSENSE_POOL.map((q) => q.id);
+    const most = all.slice(0, all.length - 20);
+    // Plenty left → untouched. Nothing left → wiped. No tier behaviour in between.
+    expect(refreshServedBag(NONSENSE_POOL_SORTED, most, 5, 4)).toEqual(most);
+    expect(refreshServedBag(NONSENSE_POOL_SORTED, all, 5, 4)).toEqual([]);
+  });
+
+  it('keeps ids that are no longer in the pool as seen', () => {
+    // A retired question must not silently come back as "unseen" for that room.
+    const served = [...idsOf(1).slice(0, 5), 'retired-question-id'];
+    expect(refreshServedBag(TRIVIA_POOL_SORTED, served, 5, 4)).toContain('retired-question-id');
   });
 });
 

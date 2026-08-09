@@ -1,4 +1,5 @@
 import { mulberry32 } from '../../lib/rng';
+import { orderCrossings, type Crossing } from './finish-order';
 import { Box2dPhysics } from './lazygyu/physics';
 import { pickStage } from './stages';
 import type { StageDef } from './lazygyu/maps';
@@ -201,7 +202,7 @@ async function runSimulation(
     }
 
     const snap = new Array(players.length * 2);
-    const crossedThisFrame: { i: number; y: number; key: number }[] = [];
+    const crossedThisFrame: Crossing[] = [];
     for (let i = 0; i < players.length; i++) {
       const frozen = frozenPositions.get(i);
       const p = frozen ?? physics.getMarblePosition(i);
@@ -234,15 +235,13 @@ async function runSimulation(
         frozenPositions.set(i, { x: p.x, y: stage.goalY + 0.5 });
         physics.removeMarble(i);
         // Defer the finishOrder push: marbles crossing on the *same* frame must
-        // not be ranked by array index (that systematically favors low indices).
-        // Rank them by how far past the goal line they are, breaking exact ties
-        // with the seed-derived tieRng.
-        crossedThisFrame.push({ i, y: p.y, key: tieRng() });
+        // not be ranked by array index. See `orderCrossings` for the rule — it's
+        // shared with the live tilt runner so the two can't drift apart again.
+        crossedThisFrame.push({ idx: i, y: p.y, key: tieRng() });
       }
     }
-    if (crossedThisFrame.length > 0) {
-      crossedThisFrame.sort((a, b) => b.y - a.y || a.key - b.key);
-      for (const c of crossedThisFrame) finishOrder.push(players[c.i].playerToken);
+    for (const c of orderCrossings(crossedThisFrame)) {
+      finishOrder.push(players[c.idx].playerToken);
     }
     frames.push(snap);
     frameIdx++;
@@ -268,14 +267,13 @@ async function runSimulation(
   // finishOrder is complete.
   if (finishedSet.size < players.length) {
     const lastFrame = frames[frames.length - 1];
-    const remaining: { idx: number; y: number; key: number }[] = [];
+    const remaining: Crossing[] = [];
     for (let i = 0; i < players.length; i++) {
       if (!finishedSet.has(i)) remaining.push({ idx: i, y: lastFrame[i * 2 + 1], key: tieRng() });
     }
-    // y descending = closer to goal ranks better; equal-y ties broken by the
-    // seed-derived tieRng instead of array index (stable-sort index bias).
-    remaining.sort((a, b) => b.y - a.y || a.key - b.key);
-    for (const r of remaining) finishOrder.push(players[r.idx].playerToken);
+    // Same rule as a same-frame crossing: closer to the goal ranks better, exact
+    // ties go to the seeded stream rather than array index.
+    for (const r of orderCrossings(remaining)) finishOrder.push(players[r.idx].playerToken);
   }
 
   // Hold final state for ~1.6s so the loser-decided fanfare and personal rank cards

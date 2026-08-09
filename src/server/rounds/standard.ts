@@ -1,4 +1,4 @@
-import { getRoom, publicRoomState, touch, type RoomState } from '../rooms';
+import { clearRoundTimers, getRoom, publicRoomState, touch, type RoomState } from '../rooms';
 import { runGame } from '../game-runner';
 import { GAME } from '../../lib/constants';
 import { effectiveLoserCount, emitResult, type IO } from './shared';
@@ -72,6 +72,7 @@ export async function runRound(io: IO, room: RoomState, chargeRatios: Record<str
   // Tracked on the room so `deleteRoom`/`reset` can cancel them. Untracked, their
   // closures pinned the whole frame track — the largest object in the process —
   // for the length of the race after the room was already gone.
+  clearRoundTimers(room);
   room.roundTimers = [
     setTimeout(() => {
       if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;

@@ -9,6 +9,9 @@
 - 클라(`Renderer.tsx`)는 받은 리플레이 프레임 재생만. 자체 시뮬 X.
 - 같은 `seed` + 같은 `players` (+ 선택적 `chargeRatios`) → 같은 `frames`.
 
+## 순위 판정
+같은 프레임에 골인한 마블·완주 못 한 마블의 순위는 `finish-order.ts`의 `orderCrossings`가 정한다(통과 깊이 내림차순 → seed 파생 tie-break). `marble-tilt` 라이브 러너도 **같은 함수**를 쓴다 — 배열 인덱스 순 정렬은 참가 순서 편향이라 금지.
+
 ## 공유
 - `sim.ts`/`Renderer.tsx`는 `marble-cheer`도 그대로 재사용. `simulateRace(seed, players, chargeRatios?)`의 마지막 인자만 marble-cheer가 채움.
 - `physics.createMarble(id, x, y, chargeRatio = 0)` 기본값 0이 marble의 기존 동작을 유지.

@@ -1,4 +1,11 @@
-import { clearMarbleTilt, getRoom, publicRoomState, touch, type RoomState } from '../rooms';
+import {
+  clearMarbleTilt,
+  clearRoundTimers,
+  getRoom,
+  publicRoomState,
+  touch,
+  type RoomState,
+} from '../rooms';
 import { GAME } from '../../lib/constants';
 import { MarbleTiltLiveSim } from '../../games/marble-tilt/liveSim';
 import { effectiveLoserCount, emitResult, type IO } from './shared';
@@ -120,10 +127,16 @@ export async function runMarbleTiltRound(io: IO, room: RoomState) {
     players: roundPlayers,
   });
 
-  setTimeout(() => {
-    if (!getRoom(room.id) || room.marbleTilt?.startAt !== startAt) return;
-    room.status = 'playing';
-    io.to(room.id).emit('state', publicRoomState(room));
-    sim.start();
-  }, Math.max(0, startAt - Date.now()));
+  // Tracked so `reset` / `deleteRoom` can cancel it — see rounds/reaction.ts for
+  // why the startAt guard alone isn't enough. Here it also matters that the timer
+  // is what calls `sim.start()`.
+  clearRoundTimers(room);
+  room.roundTimers = [
+    setTimeout(() => {
+      if (!getRoom(room.id) || room.marbleTilt?.startAt !== startAt) return;
+      room.status = 'playing';
+      io.to(room.id).emit('state', publicRoomState(room));
+      sim.start();
+    }, Math.max(0, startAt - Date.now())),
+  ];
 }

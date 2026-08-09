@@ -76,6 +76,15 @@ export function MarbleTiltRenderer({
   const latestTickRef = useRef<LiveTick | null>(null);
   const finishedTicksRef = useRef<number[]>(new Array(intro.playerOrder.length).fill(-1));
   const finishOrderTokensRef = useRef<string[]>([]);
+  /**
+   * Tokens the server says actually crossed the goal — a subset of the ranking
+   * once it freezes. Kept apart from `finishOrderTokensRef` because the final
+   * ranking also contains stragglers who merely placed; treating those as
+   * finishers put a green ✓ next to the one player who never reached the line.
+   * Null until the server starts sending the split (i.e. while the race is live,
+   * where the ranking and the crossing list are the same thing).
+   */
+  const crossedTokensRef = useRef<Set<string> | null>(null);
   // Snapshot of the penalty set, frozen the tick it's decided. Recomputing it from
   // "who hasn't finished" would shrink it as losers trickle in during the hold.
   const loserTokensRef = useRef<string[]>([]);
@@ -203,6 +212,7 @@ export function MarbleTiltRenderer({
       positions: number[];
       finished?: number[];
       order?: number[];
+      crossed?: number[];
       boosted?: number[];
       done?: boolean;
     }) => {
@@ -217,6 +227,11 @@ export function MarbleTiltRenderer({
         finishOrderTokensRef.current = payload.order
           .map((i) => intro.playerOrder[i])
           .filter((t): t is string => !!t);
+      }
+      if (payload.crossed) {
+        crossedTokensRef.current = new Set(
+          payload.crossed.map((i) => intro.playerOrder[i]).filter((t): t is string => !!t),
+        );
       }
       if (payload.finished && payload.finished.length > 0) {
         for (const idx of payload.finished) {
@@ -369,13 +384,20 @@ export function MarbleTiltRenderer({
       }
 
       // Update live finish state on the faux replay. A client that joined mid-race
-      // has no tick number for finishes it never saw, but the server's order still
-      // says they're done — mark those as finished on tick 0 so the leaderboard
-      // ranks them instead of piling them into "still running" at an identical y.
+      // has no tick number for finishes it never saw, but the server still says
+      // they crossed — mark those as finished on tick 0 so the leaderboard ranks
+      // them instead of piling them into "still running" at an identical y.
+      // Membership comes from the *crossing* list, not the ranking: once the race
+      // ends the ranking also contains stragglers, and treating them as finishers
+      // hung a green ✓ on the player who never made it to the goal.
+      const crossed = crossedTokensRef.current;
       for (let i = 0; i < totalPlayers; i++) {
         const seenTick = finishedTicksRef.current[i];
-        const inOrder = finishOrderTokensRef.current.includes(intro.playerOrder[i]);
-        fauxReplay.finishFrames[i] = seenTick >= 0 ? seenTick : inOrder ? 0 : -1;
+        const token = intro.playerOrder[i];
+        const didCross = crossed
+          ? crossed.has(token)
+          : finishOrderTokensRef.current.includes(token);
+        fauxReplay.finishFrames[i] = seenTick >= 0 ? seenTick : didCross ? 0 : -1;
       }
       fauxReplay.finishOrder = finishOrderTokensRef.current;
 
@@ -420,7 +442,15 @@ export function MarbleTiltRenderer({
       const orderTokens = finishOrderTokensRef.current;
       const stlReached = orderTokens.length >= totalPlayers - nLosers;
       if (stlReached && loserTokensRef.current.length === 0) {
-        const stillRunning = intro.playerOrder.filter((t) => !orderTokens.includes(t));
+        // Rank whoever is still running by how far they've got — the same rule the
+        // server uses for stragglers in `computeFinalResult`. Leaving them in
+        // spawn order made the banner's "worst" disagree with the result screen's
+        // whenever the penalty count was 2 or 3.
+        const stillRunning = intro.playerOrder
+          .map((token, i) => ({ token, y: next[i * 2 + 1] }))
+          .filter(({ token }) => !orderTokens.includes(token))
+          .sort((a, b) => b.y - a.y)
+          .map(({ token }) => token);
         loserTokensRef.current = resolveLosers([...orderTokens, ...stillRunning], nLosers)
           .loserTokens;
         loserDecidedTickRef.current = tickIdx;
@@ -561,7 +591,14 @@ export function MarbleTiltRenderer({
       const finishedRank = myPlayerToken
         ? finishOrderTokensRef.current.indexOf(myPlayerToken) + 1
         : 0;
-      const myRank = finishedRank > 0 ? finishedRank : iAmLoser ? totalPlayers : 0;
+      // Before the ranking freezes, a loser isn't in `order` yet — derive the rank
+      // from their slot in the sealed penalty set instead of assuming dead last.
+      // With 2–3 penalties that assumption told the second-worst player they'd come
+      // last, and the result screen then said otherwise. `loserTokens` is worst
+      // first, so position k from the end is rank (total − k).
+      const loserPos = myPlayerToken ? loserTokens.indexOf(myPlayerToken) : -1;
+      const myRank =
+        finishedRank > 0 ? finishedRank : loserPos >= 0 ? totalPlayers - loserPos : 0;
       if (myFinishLockedTick >= 0 && tickIdx >= myFinishLockedTick && myRank > 0) {
         drawPersonalRankCard(
           ctx, dpr, W, H, myRank, totalPlayers, iAmLoser, tickIdx - myFinishLockedTick, DISPLAY_FPS, now,

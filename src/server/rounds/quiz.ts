@@ -1,7 +1,15 @@
-import { clearTrivia, getRoom, publicRoomState, touch, type RoomState } from '../rooms';
+import {
+  clearRoundTimers,
+  clearTrivia,
+  getRoom,
+  publicRoomState,
+  touch,
+  type RoomState,
+} from '../rooms';
 import { runGame } from '../game-runner';
 import {
   buildQuizPlan,
+  refreshServedBag,
   type QuizQuestion,
   type TriviaIntroData,
   type TriviaReplayData,
@@ -81,18 +89,23 @@ export async function runQuizRound(io: IO, room: RoomState) {
   // round's questions. Re-reading it there would rebuild a different plan and the
   // result would score answers against the wrong questions.
   const served = room.servedQuestions?.[gameId] ?? [];
-  // Shuffle-bag wrap: once too few unseen questions remain to fill a round, start a
-  // fresh cycle instead of letting the fallback ladder serve arbitrary repeats.
+  // Shuffle-bag refresh: once too few unseen questions remain to fill a round, start
+  // a fresh cycle instead of letting the fallback ladder serve arbitrary repeats.
   // The margin matters — "5 unseen left" doesn't mean "5 usable": sibling exclusion
   // can rule out most of the tail (three palindrome questions can't share a round),
   // and the picker then drops freshness before it drops the sibling rule, repeating
-  // a question. Wrapping a little early costs nothing; the bag is being emptied anyway.
-  // Decide the wrap without touching room state: a round that dies before it
-  // produces a result must not have consumed — or reset — the bag. The room's
-  // list is only rewritten in `finishHandler`.
-  const wrapping =
-    pool.length - served.length < GAME.TRIVIA_QUESTION_COUNT + GAME.TRIVIA_WRAP_MARGIN;
-  const excludeIds = wrapping ? [] : [...served];
+  // a question. Refreshing a little early costs nothing; the bag is being emptied anyway.
+  // The per-difficulty accounting lives in `refreshServedBag` — the tier that empties
+  // first, not the pool as a whole, is what forces the picker into repeats.
+  // Decide this without touching room state: a round that dies before it produces a
+  // result must not have consumed — or reset — the bag. The room's list is only
+  // rewritten in `finishHandler`.
+  const excludeIds = refreshServedBag(
+    pool,
+    served,
+    GAME.TRIVIA_QUESTION_COUNT,
+    GAME.TRIVIA_WRAP_MARGIN,
+  );
 
   const seed = (Math.random() * 0x7fffffff) | 0;
   const plan = buildQuizPlan(seed, pool, excludeIds);
@@ -337,9 +350,14 @@ export async function runQuizRound(io: IO, room: RoomState) {
     players: roundPlayers,
   });
 
-  setTimeout(() => {
-    if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
-    room.status = 'playing';
-    io.to(room.id).emit('state', publicRoomState(room));
-  }, Math.max(0, startAt - Date.now()));
+  // Tracked so `reset` / `deleteRoom` can cancel it — see rounds/reaction.ts for
+  // why the startAt guard alone isn't enough.
+  clearRoundTimers(room);
+  room.roundTimers = [
+    setTimeout(() => {
+      if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
+      room.status = 'playing';
+      io.to(room.id).emit('state', publicRoomState(room));
+    }, Math.max(0, startAt - Date.now())),
+  ];
 }

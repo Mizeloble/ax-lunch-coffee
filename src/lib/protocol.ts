@@ -128,6 +128,14 @@ export type MarbleTiltTickPayload = {
    * ranking, which is also what lets a timed-out race reveal its losers at all.
    */
   order?: number[];
+  /**
+   * Marbles that actually crossed the goal, in crossing order. Absent while the
+   * race is live (there `order` *is* the crossing list); present once the ranking
+   * freezes, because from then on `order` also carries stragglers ranked by how
+   * far they got. Without the split the client drew a finish mark on the loser who
+   * never reached the line.
+   */
+  crossed?: number[];
   /** Marble indices whose owner triggered a boost during this tick — clients
    *  use these for one-shot visual effects (white flash + burst). */
   boosted?: number[];

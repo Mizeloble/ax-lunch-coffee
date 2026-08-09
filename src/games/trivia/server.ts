@@ -30,6 +30,80 @@ export type QuizQuestion = {
 const DEFAULT_DIFFICULTY = 2;
 
 /**
+ * Per-difficulty draw quota for a round of `n` questions (5 → 2 easy / 2 normal /
+ * 1 hard). Shared by the picker and the shuffle-bag refresh below so the two can't
+ * drift: the refresh exists precisely to keep the picker from ever having to break
+ * this quota, and it can only do that if it computes the identical numbers.
+ */
+export function difficultyQuota(n: number): Record<1 | 2 | 3, number> {
+  const easy = Math.round(n * 0.4);
+  const hard = Math.max(1, Math.floor(n * 0.2));
+  return { 1: easy, 2: n - easy - hard, 3: hard };
+}
+
+/**
+ * Decide which of a room's already-served question ids should still count as
+ * "seen" for the next draw — i.e. refresh the shuffle bag.
+ *
+ * The naive version of this measured the whole pool ("fewer than a round's worth
+ * of unseen questions left → wipe the history"), and that is the wrong pool. The
+ * draw is per-difficulty, so the binding constraint is whichever tier empties
+ * first: with 54 hard questions and exactly one hard slot per round, the hard tier
+ * runs dry at round 54 while a 363-question pool doesn't trip a total-based check
+ * until round 71. In between, `pickQuestions` drops freshness before it drops the
+ * quota (that ordering is deliberate — a lopsided round is worse than a repeat),
+ * so every one of those 17 rounds re-served a hard question the room had already
+ * seen. That is exactly the "아까 그거 또 나왔네" this mechanism exists to prevent.
+ *
+ * So: refresh per tier, not all-or-nothing. Only the exhausted tier's ids are
+ * dropped, which restarts that tier's cycle while the other tiers keep the
+ * freshness they've still got. Pools with no difficulty tags (nonsense) have the
+ * quota switched off, so they fall through to the original total-based check and
+ * behave exactly as before.
+ *
+ * Pure: same (pool, served) → same result. The caller snapshots the return value
+ * once at round start and hands the identical array to `computeResult`.
+ */
+export function refreshServedBag(
+  sortedPool: readonly QuizQuestion[],
+  servedIds: readonly string[],
+  count: number,
+  margin: number,
+): string[] {
+  const served = new Set(servedIds);
+  const unseenTotal = sortedPool.reduce((n, q) => (served.has(q.id) ? n : n + 1), 0);
+  // Whole-pool exhaustion still wipes everything — nothing left to preserve.
+  if (unseenTotal < count + margin) return [];
+  if (!sortedPool.some((q) => q.difficulty != null)) return [...servedIds];
+
+  const quota = difficultyQuota(count);
+  const unseenByLevel: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
+  for (const q of sortedPool) {
+    if (!served.has(q.id)) unseenByLevel[q.difficulty ?? DEFAULT_DIFFICULTY] += 1;
+  }
+
+  const exhausted = new Set<1 | 2 | 3>();
+  for (const level of [1, 2, 3] as const) {
+    const need = quota[level];
+    if (need <= 0) continue;
+    // Same reserve rationale as the whole-pool margin, scaled to the tier's share
+    // of the round: "enough unseen left to fill the slot" isn't enough, because
+    // sibling exclusion can rule out most of a short tail.
+    const reserve = Math.ceil((margin * need) / count);
+    if (unseenByLevel[level] < need + reserve) exhausted.add(level);
+  }
+  if (exhausted.size === 0) return [...servedIds];
+
+  const levelById = new Map(sortedPool.map((q) => [q.id, q.difficulty ?? DEFAULT_DIFFICULTY]));
+  return servedIds.filter((id) => {
+    const level = levelById.get(id);
+    // Ids no longer in the pool (question retired between rounds) keep counting as
+    // seen — dropping them would silently re-serve a question the room did get.
+    return level === undefined || !exhausted.has(level);
+  });
+}
+
+/**
  * Replay payload broadcast on game:start. Carries everything the client needs to
  * render every question + reveal phase deterministically off wall-clock.
  *
@@ -137,13 +211,7 @@ function pickQuestions(
   }
   const n = Math.min(count, pool.length);
   const cap = Math.max(1, Math.ceil(n * 0.6));
-  const easyQuota = Math.round(n * 0.4);
-  const hardQuota = Math.max(1, Math.floor(n * 0.2));
-  const quota: Record<1 | 2 | 3, number> = {
-    1: easyQuota,
-    2: n - easyQuota - hardQuota,
-    3: hardQuota,
-  };
+  const quota = difficultyQuota(n);
 
   const picked: QuizQuestion[] = [];
   const pickedIds = new Set<string>();

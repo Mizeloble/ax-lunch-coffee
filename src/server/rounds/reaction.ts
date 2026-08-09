@@ -1,4 +1,11 @@
-import { clearReaction, getRoom, publicRoomState, touch, type RoomState } from '../rooms';
+import {
+  clearReaction,
+  clearRoundTimers,
+  getRoom,
+  publicRoomState,
+  touch,
+  type RoomState,
+} from '../rooms';
 import { prepareGameIntro, runGame } from '../game-runner';
 import { GAME } from '../../lib/constants';
 import { mulberry32 } from '../../lib/rng';
@@ -140,11 +147,19 @@ export async function runReactionRound(io: IO, room: RoomState) {
     players: roundPlayers,
   });
 
-  setTimeout(() => {
-    if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
-    room.status = 'playing';
-    io.to(room.id).emit('state', publicRoomState(room));
-  }, Math.max(0, startAt - Date.now()));
+  // Tracked so `reset` / `deleteRoom` can cancel it. The startAt guard below would
+  // usually catch a stale fire on its own, but it compares against the captured
+  // `room` object — after the room is deleted that object still holds the old
+  // round, so an untracked timer had nothing but room-id reuse standing between it
+  // and broadcasting a dead round's state into a live one.
+  clearRoundTimers(room);
+  room.roundTimers = [
+    setTimeout(() => {
+      if (!getRoom(room.id) || room.currentRound?.startAt !== startAt) return;
+      room.status = 'playing';
+      io.to(room.id).emit('state', publicRoomState(room));
+    }, Math.max(0, startAt - Date.now())),
+  ];
 }
 
 /**

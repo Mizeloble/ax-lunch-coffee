@@ -13,6 +13,7 @@ import { mulberry32 } from '../../lib/rng';
 import { Box2dPhysics } from '../marble/lazygyu/physics';
 import { pickStage } from '../marble/stages';
 import { spawnMarbles } from '../marble/sim';
+import { orderCrossings, type Crossing } from '../marble/finish-order';
 import type { StaticEntity } from '../marble/sim';
 
 // --- tuning constants ------------------------------------------------------
@@ -80,6 +81,10 @@ export type LiveTickPayload = {
   /** Authoritative finish order so far (marble indices, best first); the complete
    *  ranking once the race ends. Clients mirror this instead of inferring it. */
   order?: number[];
+  /** Marbles that actually crossed the goal, in crossing order. Sent only once the
+   *  ranking is frozen, because from then on `order` also contains stragglers
+   *  ranked by distance — they placed, but they never finished. */
+  crossed?: number[];
   /** Marble indices boosted this tick — clients show one-shot visual on them. */
   boosted?: number[];
   done?: boolean;
@@ -97,6 +102,12 @@ export class MarbleTiltLiveSim {
   private callbacks: LiveSimCallbacks;
   private seed: number;
   private rng: () => number;
+  /**
+   * Separate seed-derived stream used only to order marbles that cross on the
+   * *same* tick. Kept apart from `rng` so it can't shift the spawn layout's RNG
+   * call order (`spawnMarbles` is shared with the precompute runner).
+   */
+  private tieRng: () => number;
 
   // Per-marble tilt state, keyed by playerToken (so disconnects don't break index alignment).
   private tilts = new Map<string, { x: number; ts: number }>();
@@ -146,6 +157,7 @@ export class MarbleTiltLiveSim {
     this.loserCount = Math.max(1, opts.loserCount);
     this.callbacks = opts.callbacks;
     this.rng = mulberry32(opts.seed);
+    this.tieRng = mulberry32((opts.seed ^ 0x9e3779b9) >>> 0);
   }
 
   /**
@@ -331,7 +343,14 @@ export class MarbleTiltLiveSim {
 
     // Sample positions, anti-stuck check, finish detection.
     const positions = new Array<number>(this.players.length * 2);
-    const finishedThisTick: number[] = [];
+    // Marbles that crossed on THIS tick, collected before any of them is ranked.
+    // Pushing straight into `finishOrder` from the `for i` loop ranked simultaneous
+    // finishers by marble index — and marble index is room join order, so the
+    // earliest joiner won every photo finish. The precompute runner already sorts
+    // these by how far past the goal line they got (see sim.ts); at 60 Hz sampling
+    // the live runner collides *more* often than the 120 fps recording does, so it
+    // needs the same rule.
+    const crossedThisTick: Crossing[] = [];
     for (let i = 0; i < this.players.length; i++) {
       const frozen = this.frozenPositions.get(i);
       const p = frozen ?? this.physics.getMarblePosition(i);
@@ -359,12 +378,18 @@ export class MarbleTiltLiveSim {
 
       if (p.y > this.goalY) {
         this.finishedSet.add(i);
-        this.finishOrder.push(this.players[i].playerToken);
-        this.finishOrderIdx.push(i);
         this.frozenPositions.set(i, { x: p.x, y: this.goalY + 0.5 });
         this.physics.removeMarble(i);
-        finishedThisTick.push(i);
+        // Deferred: ranked below, by depth past the goal line.
+        crossedThisTick.push({ idx: i, y: p.y, key: this.tieRng() });
       }
+    }
+
+    const finishedThisTick: number[] = [];
+    for (const c of orderCrossings(crossedThisTick)) {
+      this.finishOrder.push(this.players[c.idx].playerToken);
+      this.finishOrderIdx.push(c.idx);
+      finishedThisTick.push(c.idx);
     }
 
     // Detect race end → freeze ranking, but KEEP TICKING through the hold so
@@ -401,6 +426,11 @@ export class MarbleTiltLiveSim {
       // Always on the wire — a client that reloaded mid-race has no finish history
       // of its own, and one that missed a tick would otherwise under-count.
       payload.order = (this.finalOrderIdx ?? this.finishOrderIdx).slice();
+      // Before the freeze the two are the same list, so only send this once they
+      // can diverge. `finishOrderIdx` keeps growing during the hold — a straggler
+      // can still roll across the line while the fanfare plays — and that's exactly
+      // the case the client has to render honestly.
+      if (this.finalOrderIdx) payload.crossed = this.finishOrderIdx.slice();
       if (finishedThisTick.length > 0) payload.finished = finishedThisTick;
       if (hasBoost) {
         payload.boosted = [...this.pendingBoosts];
@@ -434,15 +464,16 @@ export class MarbleTiltLiveSim {
   private computeFinalResult(): { ranking: string[]; losers: string[] } {
     const orderIdx = this.finishOrderIdx.slice();
     if (this.finishedSet.size < this.players.length && this.physics) {
-      const remaining: { idx: number; y: number }[] = [];
+      const remaining: Crossing[] = [];
       for (let i = 0; i < this.players.length; i++) {
         if (this.finishedSet.has(i)) continue;
         const frozen = this.frozenPositions.get(i);
         const p = frozen ?? this.physics.getMarblePosition(i);
-        remaining.push({ idx: i, y: p.y });
+        remaining.push({ idx: i, y: p.y, key: this.tieRng() });
       }
-      remaining.sort((a, b) => b.y - a.y);
-      for (const r of remaining) orderIdx.push(r.idx);
+      // Same rule as a same-tick crossing: closer to the goal ranks better, exact
+      // ties go to the seeded stream rather than array index.
+      for (const r of orderCrossings(remaining)) orderIdx.push(r.idx);
     }
     // Publish the complete ranking on the wire too: it's what lets clients that
     // joined late — or a race that ended on the 60s timeout, where nobody may
