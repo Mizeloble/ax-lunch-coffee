@@ -11,7 +11,7 @@ export const ROOM = {
   /**
    * Global cap on concurrent in-memory rooms (single Fly shared-cpu-1x / 512MB,
    * no autoscale). This is a CAPACITY / OOM / abuse guard so the box degrades
-   * gracefully (`POST /api/rooms` → 503, client shows a "잠시 후 다시" notice)
+   * gracefully (`room:create` → CAPACITY, client shows a "잠시 후 다시" notice)
    * instead of thrashing many concurrent box2d sims on one shared vCPU.
    *
    * NOTE: this does NOT bound hosting cost. Fly bills machine *started-seconds*,
@@ -27,9 +27,15 @@ export const ROOM = {
    * (host page connecting + `join`). A room with no connected player after this
    * is treated as squatted/abandoned and dropped immediately — without it a
    * never-joined room would hold a MAX_ROOMS slot for the full IDLE_MS, letting
-   * one IP exhaust global capacity by hammering `POST /api/rooms`.
+   * one IP exhaust global capacity by hammering `room:create`.
    */
   UNCLAIMED_MS: 90_000,
+  /**
+   * `room:create` ack 대기 상한. 소켓 연결까지 포함한 시간이라 Fly scale-to-zero
+   * 콜드스타트(머신 기동 + Next prepare)를 넉넉히 덮어야 한다 — 짧으면 첫 방문자만
+   * 실패한다. 초과 시 버튼을 풀고 실패 안내(재시도 가능).
+   */
+  CREATE_TIMEOUT_MS: 20_000,
 } as const;
 
 export const GAME = {
@@ -101,7 +107,7 @@ export const NICKNAME = {
 
 export const RATE_LIMIT = {
   /**
-   * 방 생성(POST /api/rooms) IP별 고정 윈도우 제한. 공개 엔드포인트 스팸/남용 방지.
+   * 방 생성(`room:create` 소켓 이벤트) IP별 고정 윈도우 제한. 스팸/남용 방지.
    * 프로덕션에서만 적용(개발·LAN 테스트는 통과). 한 IP에서 윈도우 안에 정상적으로
    * 방을 여러 번 여는 경우(재시도·여러 모임)를 막지 않도록 넉넉히 잡되,
    * MAX_ROOMS보다 낮게 둠 — 한 IP가 한 윈도우 안에 전역 슬롯을 통째로

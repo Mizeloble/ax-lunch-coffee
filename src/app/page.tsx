@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
 import { isValidRoomId, normalizeRoomId } from '@/lib/ids';
+import { getSocket } from '@/lib/socket-client';
+import { ROOM } from '@/lib/constants';
+import type { RoomCreateAck } from '@/lib/protocol';
 import { GAME_META, type GameId } from '@/games/types';
 import { gameShortLabel } from '@/lib/game-labels';
 import { AdSlot } from '@/components/AdSlot';
@@ -59,27 +62,32 @@ export default function LandingPage() {
     router.push(`/r/${normalizeRoomId(code)}?join=1`);
   }
 
-  async function createRoom() {
+  function createRoom() {
     if (busy) return;
     setBusy(true);
     setError(null);
-    try {
-      const res = await fetch('/api/rooms', { method: 'POST' });
-      if (!res.ok) {
-        // 503 = 전역 방 수 상한, 429 = IP 레이트리밋 → 둘 다 "잠시 후" 혼잡 안내
-        setBusy(false);
-        setError(res.status === 503 || res.status === 429 ? ko.landing.busy : ko.landing.createFailed);
-        return;
-      }
-      const { roomId, hostToken } = (await res.json()) as { roomId: string; hostToken: string };
-      try {
-        sessionStorage.setItem(`bbk:host:${roomId}`, hostToken);
-      } catch {}
-      router.push(`/r/${roomId}`);
-    } catch {
-      setBusy(false);
-      setError(ko.landing.createFailed);
-    }
+    // 소켓으로 만든다 — 이 소켓은 곧 RoomClient가 그대로 재사용하므로 연결이 한 번만
+    // 일어난다. (HTTP 라우트였을 때는 미니앱처럼 다른 오리진에서 부르면 CORS로 막히면서
+    // 서버엔 방만 남았다.) 아직 연결 전이면 socket.io가 패킷을 큐잉했다가 연결 직후 보낸다.
+    getSocket()
+      .timeout(ROOM.CREATE_TIMEOUT_MS)
+      .emit('room:create', (timeoutErr: Error | null, res?: RoomCreateAck) => {
+        if (timeoutErr || !res) {
+          setBusy(false);
+          setError(ko.landing.createFailed);
+          return;
+        }
+        if (!res.ok) {
+          // CAPACITY(전역 상한) · RATE(IP 제한) → 서버가 이미 혼잡 문구로 내려준다.
+          setBusy(false);
+          setError(res.message || ko.landing.createFailed);
+          return;
+        }
+        try {
+          sessionStorage.setItem(`bbk:host:${res.roomId}`, res.hostToken);
+        } catch {}
+        router.push(`/r/${res.roomId}`);
+      });
   }
 
   return (

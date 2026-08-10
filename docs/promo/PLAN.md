@@ -61,7 +61,7 @@
 - [x] `ALLOWED_ORIGIN` 시크릿이 실제 배포 URL과 일치 (`fly secrets list`)
   - `fly secrets list` → `ALLOWED_ORIGIN` `Deployed`. 배포 호스트 = `bokbulbok-party.fly.dev`. (Fly는 시크릿 값을 해시로만 노출 — 원문 비교 불가. 프로덕션 소켓이 동작 중이면 일치하는 것; 불일치면 소켓 CORS가 거부돼 게임이 안 됨.)
 - [x] 스파이크 가드 켜짐: `ROOM.MAX_ROOMS` 상한 + 프로덕션 IP 레이트리밋(429)
-  - `MAX_ROOMS=10` 전역 동시 방 상한(초과 `POST /api/rooms` → 503). 프로덕션 IP 레이트리밋 `ROOM_CREATE_MAX=5 / 60s` → 429. 추가로 소켓 레이트(`SOCKET_RATE`: hot/ctrl/connect), 미입장 방 빠른 GC(`UNCLAIMED_MS=90s`), 인바운드 버퍼 8KB 캡. 512MB 단일 인스턴스 OOM 방지 충분.
+  - `MAX_ROOMS=10` 전역 동시 방 상한(초과 시 `room:create` → CAPACITY). 프로덕션 IP 레이트리밋 `ROOM_CREATE_MAX=5 / 60s` → RATE. 추가로 소켓 레이트(`SOCKET_RATE`: hot/ctrl/connect), 미입장 방 빠른 GC(`UNCLAIMED_MS=90s`), 인바운드 버퍼 8KB 캡. 512MB 단일 인스턴스 OOM 방지 충분.
 - [x] 헬스 체크 경로 존재(핑/상시가동 점검용)
   - **없었음 → `server.ts`에 `/healthz` 추가함** (Next 핸들러 앞에서 200 `ok` 반환, 룸 상태 미접촉). 핑/워밍업/업타임 점검용.
 - [ ] 데모 GIF가 현재 UI와 일치 (`node scripts/capture-demo.mjs <marble|trivia>`)

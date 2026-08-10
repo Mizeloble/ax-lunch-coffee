@@ -6,6 +6,7 @@ import {
   clearRoundTimers,
   clearReaction,
   clearTrivia,
+  createRoom,
   deleteRoom,
   findPlayerBySocket,
   getRoom,
@@ -13,11 +14,12 @@ import {
   isHostToken,
   promoteNextHost,
   publicRoomState,
+  RoomCapacityError,
   touch,
   type RoomState,
 } from './rooms';
 import { ko } from '../lib/i18n';
-import { GAME, NICKNAME, ROOM, SOCKET_RATE } from '../lib/constants';
+import { GAME, NICKNAME, RATE_LIMIT, ROOM, SOCKET_RATE } from '../lib/constants';
 import { GAME_META, gameCategory, isLiveGame, isQuizGame, type GameId } from '../games/types';
 import { checkRateLimit } from './rate-limit';
 import { incCounter } from './metrics';
@@ -47,6 +49,33 @@ export function attachSocketHandlers(io: IO) {
     }
 
     let currentRoomId: string | null = null;
+
+    socket.on('room:create', (ack) => {
+      if (typeof ack !== 'function') return;
+      if (ctrlLimited(socket)) return ack(err('RATE', ko.landing.busy));
+      // Per-IP creation limit (prod only) — same budget the HTTP route enforced,
+      // now keyed off the handshake IP. Dev / LAN QR testing stays unthrottled.
+      if (isProd) {
+        const { ok } = checkRateLimit(
+          `room:${socketIp(socket)}`,
+          RATE_LIMIT.ROOM_CREATE_WINDOW_MS,
+          RATE_LIMIT.ROOM_CREATE_MAX,
+          Date.now(),
+        );
+        if (!ok) return ack(err('RATE', ko.landing.busy));
+      }
+      try {
+        const { roomId, hostToken } = createRoom();
+        ack({ ok: true, roomId, hostToken });
+      } catch (e) {
+        // Capacity is the expected rejection (global MAX_ROOMS guard). Anything
+        // else must still ack — an unacked create leaves the button spinning
+        // until the client's timeout.
+        if (e instanceof RoomCapacityError) return ack(err('CAPACITY', ko.landing.busy));
+        console.error('[room:create]', e);
+        ack(err('INTERNAL', ko.landing.createFailed));
+      }
+    });
 
     socket.on('join', (payload, ack) => {
       if (typeof ack !== 'function') return;

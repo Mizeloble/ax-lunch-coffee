@@ -167,9 +167,10 @@ export function clearMarbleTilt(room: RoomState) {
   room.marbleTilt = undefined;
 }
 
-// IMPORTANT: Next.js API routes (Turbopack-bundled) and the Socket.IO handler (loaded by tsx)
-// run in different module instances, so a plain `new Map()` here would split into two stores
-// (one used by `POST /api/rooms`, another by socket join). Pin to globalThis to share.
+// IMPORTANT: Next.js server code (Turbopack-bundled) and the Socket.IO handler (loaded by tsx)
+// run in different module instances, so a plain `new Map()` here would split into two stores.
+// Every writer now goes through the socket handler, but the split-instance hazard is a property
+// of the bundling setup, not of who calls in — keep it pinned to globalThis.
 const ROOMS_KEY = '__bokbulbokRooms';
 type GlobalWithRooms = typeof globalThis & { [ROOMS_KEY]?: Map<string, RoomState> };
 const g = globalThis as GlobalWithRooms;

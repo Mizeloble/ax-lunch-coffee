@@ -204,6 +204,15 @@ export type JoinAck =
   | { ok: true; playerToken: string; isHost: boolean }
   | { ok: false; code: string; message: string };
 
+/**
+ * Room creation ack. `code` is `CAPACITY` (global room cap) or `RATE` (per-IP
+ * limit) — both surface the same "잠시 후 다시" copy; anything else is a generic
+ * failure. `message` is already localized server-side.
+ */
+export type RoomCreateAck =
+  | { ok: true; roomId: string; hostToken: string }
+  | { ok: false; code: string; message: string };
+
 export type AddPlayerAck =
   | { ok: true; playerToken: string }
   | { ok: false; code: string; message: string };
@@ -231,6 +240,15 @@ export type ServerToClientEvents = {
 };
 
 export type ClientToServerEvents = {
+  /**
+   * Create a room and return its id + hostToken. Lives on the socket rather than
+   * an HTTP route so the miniapp (served from a different origin — Toss CDN) can
+   * call it: Socket.IO's `cors` covers `/socket.io/` only, and a Next route
+   * handler ships no CORS headers, so the cross-origin POST was blocked *after*
+   * the server had already created the room — failing the caller and orphaning a
+   * room for the whole unclaimed window. One origin-sensitive channel, not two.
+   */
+  'room:create': (ack: (res: RoomCreateAck) => void) => void;
   join: (
     payload: { roomId: string; nickname: string; playerToken?: string; hostToken?: string },
     ack: (res: JoinAck) => void,
