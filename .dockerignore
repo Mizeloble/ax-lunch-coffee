@@ -5,3 +5,7 @@ node_modules
 .env*
 *.log
 README.md
+# 앱인토스 미니앱 클라이언트 — 별도 빌드(.ait 번들)라 Fly 이미지와 무관하다.
+# 빌드 컨텍스트에 넣으면 미니앱만 고쳐도 `COPY . .` 레이어 캐시가 깨져 배포마다
+# 전체 next build가 다시 돈다.
+miniapp
