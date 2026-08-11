@@ -29,6 +29,7 @@
 
 ### C. Fly secret (런타임)
 - [x] `fly secrets set ALLOWED_ORIGIN=https://bokbulbok-party.fly.dev` — 소켓 CORS 고정(`server.ts`). 동일출처라 게임엔 필수 아님(미스매치여도 same-origin 통과)이나 정확성 위해 설정됨.
+  - 콤마 분리로 복수 오리진 지원(v2.31.0, `src/server/allowed-origin.ts`) — 토스 미니앱은 tossmini.com 오리진에서 이 서버에 붙으므로, 샌드박스 실측 전에 `ALLOWED_ORIGIN=https://bokbulbok-party.fly.dev,https://<appName>.web.tossmini.com,https://<appName>.private-web.tossmini.com` 형태로 갱신(절차는 docs/toss-miniapp-review.md Phase 1).
 
 ### D. 배포 & 확인
 - [x] 위 variable/secret 등록 후 main에 push(또는 워크플로 재실행)하면 빌드 반영. — CF beacon 토큰 라이브 HTML에 주입 확인(2026-06-09).

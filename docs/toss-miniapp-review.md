@@ -200,7 +200,7 @@ Vite CSR + `@apps-in-toss/web-framework` 3.0.2. **포팅 리스크가 예상보�
 
 **실측 전 서버 선결 작업:**
 1. ✅ **완료 (v2.30.0)** — 방 생성을 `room:create` 소켓 이벤트로 이전하고 `POST /api/rooms`를 삭제했다. IP 레이트리밋·MAX_ROOMS·메트릭은 그대로 보존(핸드셰이크 IP로 키잉). 이제 오리진에 민감한 채널은 소켓 하나뿐이라 CORS 설정 지점도 한 곳이다. 크로스오리진(:5173→:3000)에서 방 생성~결과까지 전체 루프 검증 완료.
-2. ⬜ `ALLOWED_ORIGIN`이 [server.ts:62](../server.ts:62)에서 **단일 문자열**이라 tossmini 도메인 2개(실서비스·QR 테스트)를 함께 못 받는다 → 콤마 분리 배열 지원 필요 (기존 단일 값과 호환). appName 확정(콘솔 등록) 후에 값이 정해지므로 그때 수행.
+2. ✅ **코드 완료 (v2.31.0)** — `ALLOWED_ORIGIN` 콤마 분리 지원([src/server/allowed-origin.ts](../src/server/allowed-origin.ts) + 유닛 테스트). 프로덕션 모드 실측: 허용 오리진 3개 각각 CORS 헤더 에코, 목록 밖 오리진은 헤더 없음(차단). **남은 건 fly secret 값 갱신뿐** — appName 확정(콘솔 등록) 후 `fly secrets set ALLOWED_ORIGIN=https://bokbulbok-party.fly.dev,https://<appName>.web.tossmini.com,https://<appName>.private-web.tossmini.com`.
 
 ### Phase 2 — 등급분류 + 포팅 (PoC 통과 시)
 - 등급분류: 구글 플레이에 TWA 래핑 출시($25) → IARC 등급 취득 (병행 트랙, 착수 즉시 시작 — 리드타임이 가장 김)

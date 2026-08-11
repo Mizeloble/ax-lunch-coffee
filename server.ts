@@ -3,6 +3,8 @@ import { parse } from 'node:url';
 // 의존성 제로 모듈이라 콜드스타트 계약(아래) 안에서 정적 import 허용 —
 // 소켓 청크와 같은 인스턴스를 공유해야 카운터가 한 곳에 쌓인다.
 import { renderMetrics } from './src/server/metrics';
+// 역시 의존성 제로. 파싱 규칙과 테스트는 모듈 쪽에.
+import { parseAllowedOrigin } from './src/server/allowed-origin';
 import type { Server as IOServer } from 'socket.io';
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -57,9 +59,14 @@ const ready = (async () => {
   // unset falls back to `false` (cross-origin denied — same-origin still works) so
   // no deployment URL is baked into the public source. Dev keeps `true` so
   // localhost + LAN QR testing keeps working.
+  //
+  // Comma-separated for multiple origins: the Toss miniapp build is served from
+  // tossmini.com (two hosts — live + console-QR test) while the web app stays on
+  // the deployed host, and all of them talk to this one socket server. e.g.
+  // ALLOWED_ORIGIN=https://bokbulbok-party.fly.dev,https://bokbulbok.web.tossmini.com,https://bokbulbok.private-web.tossmini.com
   const allowedOrigin = dev
     ? true
-    : process.env.ALLOWED_ORIGIN ?? false;
+    : parseAllowedOrigin(process.env.ALLOWED_ORIGIN);
 
   // Attached after listen — a socket.io client that connects in this window gets
   // a 404 on /socket.io/ and retries; in practice players connect only after a
