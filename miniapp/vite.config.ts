@@ -11,9 +11,15 @@ export default defineConfig(({ mode }) => ({
   plugins: [react()],
   resolve: {
     alias: [
-      // 미니앱은 토스 CDN에서 서빙되므로 소켓이 페이지 오리진에 붙으면 안 된다 —
-      // 절대 URL로 붙는 shim으로 교체. next/navigation은 Vite에 없으니 최소 구현.
+      // 플랫폼이 갈리는 모듈들만 shim으로 교체하고 나머지 ../src는 그대로 쓴다.
+      // socket-client: 토스 CDN 오리진이라 소켓을 절대 URL로. next/navigation:
+      // Vite에 없으니 상태 라우터로. invite-url: 웹 URL 대신 토스 공유 링크.
+      // host-token: sessionStorage 대신 네이티브 Storage. useWakeLock:
+      // navigator.wakeLock 대신 setScreenAwakeMode.
       { find: '@/lib/socket-client', replacement: path.join(shims, 'socket-client.ts') },
+      { find: '@/lib/invite-url', replacement: path.join(shims, 'invite-url.ts') },
+      { find: '@/lib/host-token', replacement: path.join(shims, 'host-token.ts') },
+      { find: '@/lib/useWakeLock', replacement: path.join(shims, 'useWakeLock.ts') },
       { find: 'next/navigation', replacement: path.join(shims, 'next-navigation.ts') },
       { find: /^@\//, replacement: repoSrc + '/' },
     ],

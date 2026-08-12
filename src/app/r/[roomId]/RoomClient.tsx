@@ -1,11 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ko } from '@/lib/i18n';
 import { getSocket, disposeSocket } from '@/lib/socket-client';
 import { serverNow, startClockResync, syncServerClock } from '@/lib/server-clock';
 import { useWakeLock } from '@/lib/useWakeLock';
+import { useInviteUrl } from '@/lib/invite-url';
+import { readHostToken } from '@/lib/host-token';
 import { loadIdentity, saveIdentity } from '@/lib/nickname-store';
 import {
   useRoomStore,
@@ -82,10 +84,8 @@ export default function RoomClient({
   // the result screen.
   const [replayStartAt, setReplayStartAt] = useState<number | null>(null);
 
-  const inviteUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '';
-    return `${window.location.origin}/r/${roomId}?join=1`;
-  }, [roomId]);
+  // 플랫폼별 초대 링크(웹: 오리진 URL, 미니앱: 토스 공유 링크) — src/lib/invite-url.ts
+  const inviteUrl = useInviteUrl(roomId);
 
   const attemptJoin = useCallback(
     (nickname: string, playerToken?: string) => {
@@ -542,11 +542,3 @@ export default function RoomClient({
   );
 }
 
-function readHostToken(roomId: string): string | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    return window.sessionStorage.getItem(`bbk:host:${roomId}`) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}

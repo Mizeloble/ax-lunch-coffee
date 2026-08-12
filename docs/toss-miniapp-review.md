@@ -204,9 +204,32 @@ Vite CSR + `@apps-in-toss/web-framework` 3.0.2. **포팅 리스크가 예상보�
 1. ✅ **완료 (v2.30.0)** — 방 생성을 `room:create` 소켓 이벤트로 이전하고 `POST /api/rooms`를 삭제했다. IP 레이트리밋·MAX_ROOMS·메트릭은 그대로 보존(핸드셰이크 IP로 키잉). 이제 오리진에 민감한 채널은 소켓 하나뿐이라 CORS 설정 지점도 한 곳이다. 크로스오리진(:5173→:3000)에서 방 생성~결과까지 전체 루프 검증 완료.
 2. ✅ **완료 (v2.31.0)** — `ALLOWED_ORIGIN` 콤마 분리 지원([src/server/allowed-origin.ts](../src/server/allowed-origin.ts) + 유닛 테스트). appName `bokbulbok-party` 확정(2026-08-12 콘솔 등록, 변경 불가) 후 fly secret에 tossmini 오리진 2개 반영 완료 — 프로덕션에서 3개 오리진 CORS 에코 확인.
 
-### Phase 2 — 등급분류 + 포팅 (PoC 통과 시)
-- 등급분류: 구글 플레이에 TWA 래핑 출시($25) → IARC 등급 취득 (병행 트랙, 착수 즉시 시작 — 리드타임이 가장 김)
-- 포팅: §2-2 신규 항목 구현 + §3 콘텐츠 정리(미니앱용 카피·스크린샷은 음주 표현 배제)
+### Phase 2 — 등급분류 + 포팅 (진행 중)
+
+**본 포팅 1차 완료 (2026-08-13, v2.32.0).** 검수 체크리스트 대응 상태:
+
+| 검수 항목 | 구현 |
+|---|---|
+| 사운드 적용 + On/Off 설정 | ✅ `src/lib/sfx.ts` WebAudio 신디사이저(에셋 없음) — haptics를 피드백 버스로 확장해 이벤트 하나가 진동+효과음으로. 미니앱 기본 켬 + 플로팅 토글, **웹은 기본 꺼짐(동작 불변)**. 백그라운드 전환 시 AudioContext suspend |
+| 종료 확인 모달 | ✅ `ExitGuard` — `graniteEvent.backEvent`(Android 뒤로가기) → 확인 모달 → `closeView()` |
+| OS 뒤로가기 제스처 불가 | ✅ iOS `Screen.setIosSwipeBack({isEnabled:false})` + Android은 ExitGuard가 흡수 |
+| 게임 중 화면 유지 | ✅ `useWakeLock` shim → `setScreenAwakeMode` (웹뷰엔 navigator.wakeLock 없음) |
+| 딥링크 진입 | ✅ 부트에서 `Environment.initialURL` 파싱 → `/r/<코드>` 자동 입장 |
+| 초대 링크 | ✅ `useInviteUrl` 플랫폼 분리 — 웹: 오리진 URL / 미니앱: `getTossShareLink` https 링크 (웹 URL 배포 금지 준수). Lobby·ResultScreen의 QR·복사가 자동으로 토스 링크 사용 |
+| hostToken 보존 | ✅ `host-token` shim — 네이티브 `Storage`(인메모리 캐시 + JSON 영속). 웹뷰 재생성에도 호스트 권한 유지 |
+| 햅틱 iOS | ✅ `Device.triggerHaptic` 백엔드 — 웹(navigator.vibrate)은 iOS 무진동이었는데 미니앱은 iOS도 동작 |
+
+핵심 설계: **웹뷰 감지 게이트**(`toss-env.ts`, SDK와 같은 조건 `window.ReactNativeWebView`). SDK 브릿지 호출 일부가 웹뷰 밖에서 *동기로* throw해서(예: `Storage.setItem`) — 실제로 `room:create` ack 콜백을 죽여 "생성 중"에 갇히는 버그로 발현 — 모든 SDK 진입점을 게이트로 막았다. 로컬 브라우저에선 웹 기본 동작으로 폴백.
+
+**남은 항목 (실기기 확인 필요):**
+- [ ] 토스 웹뷰 실측: 사운드 재생·토글, 종료 모달, 초대 QR이 토스 링크로 뜨는지, 딥링크 진입 (재배포 후 폰 테스트)
+- [ ] 결과 공유 카드(`share-card.ts`)의 다운로드/공유가 웹뷰에서 동작하는지 — 안 되면 SDK `share()` 전환
+- [ ] 다크 테마 유지 리스크 — 가이드는 라이트 기준이나 게임 트랙은 풀스크린 자유도 있음. 검수 반려 시 대응
+- [ ] (선택) Pretendard 폰트 번들 포함 — 현재 시스템 폰트
+
+**병행 트랙:**
+- 등급분류: 구글 플레이에 TWA 래핑 출시($25) → IARC 등급 취득 (리드타임이 가장 김 — 사용자 액션 대기)
+- 에셋: §3 콘텐츠 정리(전연령 카피·스크린샷), 로고·썸네일 제작 (#9)
 - 용량 대비: 토스 유입 시 `MAX_ROOMS`(현재 10)·VM 스펙 상향 검토 ([launch-checklist.md](launch-checklist.md) Phase 2 항목과 동일)
 
 ### Phase 3 — 검수·출시

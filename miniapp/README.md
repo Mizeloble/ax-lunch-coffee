@@ -6,9 +6,15 @@
 
 ## 구조
 
-- `../src`의 RoomClient·게임 렌더러·스토어·i18n을 **그대로 재사용** — vite alias 두 개만 교체:
+- `../src`의 RoomClient·게임 렌더러·스토어·i18n을 **그대로 재사용** — 플랫폼이 갈리는 모듈만 vite alias로 교체:
   - `next/navigation` → `src/shims/next-navigation.ts` (상태 기반 화면 전환)
   - `@/lib/socket-client` → `src/shims/socket-client.ts` (절대 URL·WS-only 옵션)
+  - `@/lib/invite-url` → `src/shims/invite-url.ts` (웹 URL 대신 `getTossShareLink` 토스 공유 링크)
+  - `@/lib/host-token` → `src/shims/host-token.ts` (sessionStorage 대신 네이티브 Storage)
+  - `@/lib/useWakeLock` → `src/shims/useWakeLock.ts` (`setScreenAwakeMode`)
+- `src/toss.ts`: 플랫폼 부트 — 네이티브 햅틱 백엔드, iOS 스와이프백 차단, 딥링크(`initialURL`) 라우팅, 사운드 기본 켬
+- `src/ExitGuard.tsx` / `src/SoundToggle.tsx`: 검수 요건(종료 확인 모달 / 사운드 On/Off)
+- `src/toss-env.ts`: 웹뷰 감지 게이트 — **모든 SDK 호출은 이 게이트 뒤에서만** (웹뷰 밖에서 일부 브릿지가 동기 throw)
 - `src/Home.tsx`: PoC 홈 (방 만들기 / 코드 입장)
 - `src/DeepLinkPanel.tsx`: 입장 경로 실측 패널 — `getTossShareLink` 공유 링크 QR(주 경로, https 여부 자동 판정) + 원시 스킴 QR(대조용)
 - `apps-in-toss.config.ts`: 앱인토스 SDK 3.x 설정 (appName `bokbulbok`)

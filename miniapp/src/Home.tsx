@@ -3,6 +3,7 @@ import { ko } from '@/lib/i18n';
 import { isValidRoomId, normalizeRoomId } from '@/lib/ids';
 import { Logo } from '@/components/Logo';
 import { ROOM } from '@/lib/constants';
+import { saveHostToken } from '@/lib/host-token';
 import type { RoomCreateAck } from '@/lib/protocol';
 import { navigate } from './router';
 import { getSocket } from './shims/socket-client';
@@ -44,9 +45,7 @@ export function Home() {
           setError(res.message || ko.landing.createFailed);
           return;
         }
-        try {
-          sessionStorage.setItem(`bbk:host:${res.roomId}`, res.hostToken);
-        } catch {}
+        saveHostToken(res.roomId, res.hostToken);
         navigate(`/r/${res.roomId}`);
       });
   }

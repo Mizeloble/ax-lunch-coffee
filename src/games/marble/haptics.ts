@@ -1,7 +1,22 @@
-// Lightweight wrapper around navigator.vibrate. Honors a localStorage mute toggle
-// so users can opt out without a UI yet. No-op on devices without the API.
+// 게임 피드백 버스: 이벤트 하나가 진동 + 효과음(src/lib/sfx.ts)으로 나간다.
+// 렌더러들은 haptics.<event>()만 호출하고 출력 채널별 켬/끔은 각 모듈이 관리한다.
+//
+// 진동 기본 구현은 navigator.vibrate(iOS 미지원 → no-op). 미니앱은
+// setHapticsBackend로 네이티브 햅틱(Device.triggerHaptic)을 꽂는다 — iOS에서도
+// 진동이 생기는 개선. localStorage 뮤트 토글은 두 백엔드 모두에 적용된다.
+
+import { playFeedbackSound, type FeedbackSound } from '@/lib/sfx';
 
 const MUTE_KEY = 'marble.haptics.muted';
+
+export type HapticEvent = FeedbackSound;
+
+let backend: ((event: HapticEvent) => void) | null = null;
+
+/** 플랫폼 부트에서 네이티브 햅틱 백엔드를 꽂는다 (미니앱: Device.triggerHaptic 매핑). */
+export function setHapticsBackend(fn: ((event: HapticEvent) => void) | null): void {
+  backend = fn;
+}
 
 function isMuted(): boolean {
   if (typeof window === 'undefined') return true;
@@ -12,9 +27,18 @@ function isMuted(): boolean {
   }
 }
 
-function vibrate(pattern: number | number[]): void {
-  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
+function fire(event: HapticEvent, pattern: number | number[]): void {
+  playFeedbackSound(event);
   if (isMuted()) return;
+  if (backend) {
+    try {
+      backend(event);
+    } catch {
+      // 네이티브 브릿지 실패는 게임 진행에 영향 없어야 한다.
+    }
+    return;
+  }
+  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
   try {
     navigator.vibrate(pattern);
   } catch {
@@ -24,36 +48,36 @@ function vibrate(pattern: number | number[]): void {
 
 export const haptics = {
   countdownTick(): void {
-    vibrate(30);
+    fire('countdownTick', 30);
   },
   countdownGo(): void {
-    vibrate([0, 60, 40, 80]);
+    fire('countdownGo', [0, 60, 40, 80]);
   },
   myFinish(): void {
-    vibrate([60, 40, 120]);
+    fire('myFinish', [60, 40, 120]);
   },
   loserConfirmed(): void {
-    vibrate([0, 0, 0, 200]);
+    fire('loserConfirmed', [0, 0, 0, 200]);
   },
   chargeTap(): void {
-    vibrate(8);
+    fire('chargeTap', 8);
   },
   reactionGo(): void {
-    vibrate(40);
+    fire('reactionGo', 40);
   },
   reactionFalseStart(): void {
-    vibrate([0, 30, 30, 30]);
+    fire('reactionFalseStart', [0, 30, 30, 30]);
   },
   triviaCorrect(): void {
-    vibrate([0, 25, 30, 25]);
+    fire('triviaCorrect', [0, 25, 30, 25]);
   },
   triviaWrong(): void {
-    vibrate([0, 50, 30, 80]);
+    fire('triviaWrong', [0, 50, 30, 80]);
   },
   triviaCombo(): void {
-    vibrate([0, 15, 25, 15, 25, 30]);
+    fire('triviaCombo', [0, 15, 25, 15, 25, 30]);
   },
   triviaUrgentTick(): void {
-    vibrate(15);
+    fire('triviaUrgentTick', 15);
   },
 };

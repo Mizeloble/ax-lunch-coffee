@@ -40,9 +40,14 @@ export function DeepLinkPanel() {
   const build = useCallback(async () => {
     setState({ kind: 'loading' });
     try {
+      const { isTossWebView } = await import('./toss-env');
+      if (!isTossWebView()) throw new Error('not in toss webview');
       const { getTossShareLink } = await import('@apps-in-toss/web-framework');
+      // race에서 진 쪽 프라미스의 늦은 거부가 unhandled rejection이 되지 않게 삼킨다.
+      const create = getTossShareLink(deeplink);
+      create.catch(() => {});
       const link = await Promise.race([
-        getTossShareLink(deeplink),
+        create,
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('bridge timeout')), BRIDGE_TIMEOUT_MS),
         ),
