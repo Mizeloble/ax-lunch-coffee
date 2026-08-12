@@ -37,4 +37,4 @@ VITE_SERVER_URL=https://bokbulbok-party.fly.dev VITE_WS_ONLY=1 npm run build:ait
 ```
 
 샌드박스 테스트 전 서버의 `ALLOWED_ORIGIN`에 tossmini 도메인 추가 필요:
-`https://bokbulbok.web.tossmini.com`, `https://bokbulbok.private-web.tossmini.com`
+`https://bokbulbok-party.web.tossmini.com`, `https://bokbulbok-party.private-web.tossmini.com`

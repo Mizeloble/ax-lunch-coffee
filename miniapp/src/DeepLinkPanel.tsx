@@ -3,7 +3,7 @@ import { QRCode } from '@/components/QRCode';
 import { isValidRoomId, normalizeRoomId } from '@/lib/ids';
 import { miniKo } from './i18n';
 
-const APP_NAME = import.meta.env.VITE_APP_NAME ?? 'bokbulbok';
+const APP_NAME = import.meta.env.VITE_APP_NAME ?? 'bokbulbok-party';
 // `ait build`가 출력하는 deploymentId — intoss-private:// 테스트 스킴에 필요.
 const DEPLOYMENT_ID = import.meta.env.VITE_DEPLOYMENT_ID ?? '';
 
