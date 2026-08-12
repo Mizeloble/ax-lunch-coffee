@@ -130,7 +130,7 @@ function getTossShareLink(url: string, ogImageUrl?: string): Promise<string>;
 | V1 | **`POST /api/rooms` 크로스오리진 차단** — Socket.IO의 `cors` 옵션은 `/socket.io/`에만 적용되고 Next 라우트 핸들러에는 CORS 헤더가 없다. `curl`로 헤더 부재 확인 + 브라우저에서 실제 차단 재현(`No 'Access-Control-Allow-Origin' header`). 서버는 방을 **생성까지 하고** 클라만 응답을 못 읽어, 실패와 동시에 고아 방이 남는다 | ✅ **수정 완료** — 방 생성을 `room:create` 소켓 이벤트로 이전, HTTP 라우트 삭제 |
 | V2 | **PoC 로컬 검증이 same-origin이었다** — vite 프록시가 `/api`·`/socket.io`를 같은 오리진으로 만들어 V1을 가렸다. 즉 "전체 루프 통과"는 크로스오리진을 검증하지 못한 결과다 | ✅ **재검증 완료** — `VITE_SERVER_URL` 절대 URL(:5173→:3000)로 전체 루프 통과 |
 | V3 | **warm start 딥링크 미보장** — `Environment.initialURL`은 "처음 진입할 때"의 URL이고 이후 갱신되지 않는다. 미니앱이 이미 떠 있는 상태에서 **두 번째 방** 링크를 타면 방 코드가 전달되지 않을 수 있다. WebView SDK용 후속 딥링크 이벤트는 문서에 없다(RN SDK는 라우팅 파라미터로 처리) | 🟡 미해결 → 실측 항목, 폴백은 방 코드 입력 |
-| V4 | **공유 링크의 https 여부 미확인** — 문서가 명시하지 않는다("반환 링크가 `https://`로 시작하는지 여부는 문서에 명시돼 있지 않아요"). 앱스토어 폴백이 동작한다는 서술상 https 래퍼일 가능성이 높고 `deep_link_value`도 https 단축링크 관례지만, **추론이지 확인이 아니다.** 아니면 기본 카메라 QR 인식이 깨져 경로 2가 무너진다 | 🟡 미해결 → 실측 1순위. PoC 패널이 https 여부를 자동 판정하도록 구현됨 |
+| V4 | **공유 링크의 https 여부 미확인** — 문서가 명시하지 않는다("반환 링크가 `https://`로 시작하는지 여부는 문서에 명시돼 있지 않아요"). 앱스토어 폴백이 동작한다는 서술상 https 래퍼일 가능성이 높고 `deep_link_value`도 https 단축링크 관례지만, **추론이지 확인이 아니다** | ✅ **실측 해소 (2026-08-12)** — 토스 웹뷰에서 `getTossShareLink`가 `https://minion.toss.im/<id>` 단축링크 반환 확인. 기본 카메라 QR 스캔 가능 → 입장 경로 2(공유 링크 QR) 성립 |
 
 추가로 재평가한 리스크: **등급분류의 복합 실패 가능성.** IARC 경로는 구글 플레이에 TWA를 실제 출시해야 성립하는데, 플레이 스토어도 자체 심사가 있고 WebView 래핑 앱에 대한 최소 기능 요건이 있다. 여기서 반려되면 GRAC 직접 신청으로 되돌아가는데 그 경로는 비사업자 가능 여부가 불확실(§6-4)하다. 초판은 이 연쇄를 과소평가했다.
 
@@ -189,18 +189,20 @@ Vite CSR + `@apps-in-toss/web-framework` 3.0.2. **포팅 리스크가 예상보�
 `ait build`로 `.ait` 번들 생성 확인(140KB, JS 399KB — 100MB 제한 대비 무시 가능).
 번들에 외부 광고·분석·폰트 CDN URL이 **하나도 포함되지 않음**(`NODE_ENV=production` 주입으로 광고 자리 표시까지 제거) — 정책 §3-2 준수.
 
-**실측 항목 (샌드박스 필요 — #2 콘솔 가입 후):**
-- [ ] `wss://bokbulbok-party.fly.dev` Socket.IO 연결 (`VITE_WS_ONLY=1`로 polling 폴백 없이). **반드시 `VITE_SERVER_URL` 절대 URL로** — 프록시 경유는 크로스오리진을 검증하지 못한다(V2)
-- [ ] `getTossShareLink` 반환값이 `https://`인지 (PoC 패널이 자동 판정·표시) → 아니면 기본 카메라 QR 인식 여부를 직접 확인 (V4)
-- [ ] 공유 링크 QR을 폰 기본 카메라로 스캔 → 해당 **방으로** 진입하는지 (경로 전달 확인)
-- [ ] 미니앱이 이미 떠 있는 상태에서 다른 방 링크 진입 → 방 코드가 전달되는지 (V3, warm start)
-- [ ] 리플레이 재생·서버 시계 동기화·재연결(백그라운드 전환) 동작
-- **킬 기준**: WebSocket이 미니앱 웹뷰에서 불통이면 중단 (이 게임의 본질이라 우회 불가)
-- **킬 기준 아님**: 공유 링크가 https가 아니거나 warm start가 안 되는 것 — 둘 다 방 코드 입력 폴백이 있다
+**실측 결과 (2026-08-12, 실제 토스 앱 — 콘솔 QR 테스트 배포로 진행):**
+- [x] **wss Socket.IO 연결 ✅ — 킬 기준 통과.** `VITE_WS_ONLY=1`(polling 폴백 없음) + `VITE_SERVER_URL` 절대 URL 번들로 토스 웹뷰에서 방 생성·입장·게임 전 과정 동작
+- [x] **`getTossShareLink` → https ✅ (V4 해소).** `https://minion.toss.im/<id>` 단축링크 반환 — 기본 카메라 QR 스캔 가능, 입장 경로 2 성립
+- [x] **크로스 플랫폼 혼합 방 ✅.** 토스 미니앱 호스트 + 웹 참가자(fly.dev)가 같은 방에서 마블 1판 완주, 리플레이·최종 순위 양쪽 화면 일치(서버 권위 + 시계 동기화 검증)
+- [x] **재연결 ✅.** 게임 화면에서 홈 이탈 → 10초 후 복귀 → 방 그대로 복구. (참고: 첫 시도에서 "방을 찾을 수 없어요"가 떴는데 이는 웹뷰 문제가 아니라 결과 화면 3분 idle로 전원 이탈한 방을 서버가 정상 GC한 것 — 재접속 통신 자체는 그때도 동작했다)
+- [ ] ~~공유 링크 QR로 방 진입~~ / ~~warm start 딥링크(V3)~~ → **출시 후 재확인으로 이월.** 링크 탭 시 "지금은 서비스를 사용할 수 없어요" — `intoss://`가 정식 출시 후에만 열리는 정책이라 테스트 배포에서는 검증 불가. 실패해도 방 코드 입력 폴백이 있어 킬 아님
+
+**출시 후 재확인 목록**: ① `minion.toss.im` 공유 링크 탭 → 미니앱 해당 방 진입 ② warm start(미니앱 떠 있는 상태에서 두 번째 방 링크) 딥링크 전달(V3) ③ `contactsViral` 공유 리워드(승인 후에만 동작)
+
+**판정: GO.** 킬 기준(wss)을 포함해 테스트 배포에서 검증 가능한 전 항목 통과, 차단 요인 없음. Phase 2(등급분류 + 본 포팅) 진행.
 
 **실측 전 서버 선결 작업:**
 1. ✅ **완료 (v2.30.0)** — 방 생성을 `room:create` 소켓 이벤트로 이전하고 `POST /api/rooms`를 삭제했다. IP 레이트리밋·MAX_ROOMS·메트릭은 그대로 보존(핸드셰이크 IP로 키잉). 이제 오리진에 민감한 채널은 소켓 하나뿐이라 CORS 설정 지점도 한 곳이다. 크로스오리진(:5173→:3000)에서 방 생성~결과까지 전체 루프 검증 완료.
-2. ✅ **코드 완료 (v2.31.0)** — `ALLOWED_ORIGIN` 콤마 분리 지원([src/server/allowed-origin.ts](../src/server/allowed-origin.ts) + 유닛 테스트). 프로덕션 모드 실측: 허용 오리진 3개 각각 CORS 헤더 에코, 목록 밖 오리진은 헤더 없음(차단). **남은 건 fly secret 값 갱신뿐** — appName 확정(콘솔 등록) 후 `fly secrets set ALLOWED_ORIGIN=https://bokbulbok-party.fly.dev,https://<appName>.web.tossmini.com,https://<appName>.private-web.tossmini.com`.
+2. ✅ **완료 (v2.31.0)** — `ALLOWED_ORIGIN` 콤마 분리 지원([src/server/allowed-origin.ts](../src/server/allowed-origin.ts) + 유닛 테스트). appName `bokbulbok-party` 확정(2026-08-12 콘솔 등록, 변경 불가) 후 fly secret에 tossmini 오리진 2개 반영 완료 — 프로덕션에서 3개 오리진 CORS 에코 확인.
 
 ### Phase 2 — 등급분류 + 포팅 (PoC 통과 시)
 - 등급분류: 구글 플레이에 TWA 래핑 출시($25) → IARC 등급 취득 (병행 트랙, 착수 즉시 시작 — 리드타임이 가장 김)
