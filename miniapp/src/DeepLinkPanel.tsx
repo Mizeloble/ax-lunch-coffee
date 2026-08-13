@@ -30,6 +30,25 @@ type LinkState =
 export function DeepLinkPanel() {
   const [code, setCode] = useState('');
   const [state, setState] = useState<LinkState>({ kind: 'loading' });
+  const [hapticResult, setHapticResult] = useState('');
+
+  // 햅틱 진단 (실기기 무진동 원인 추적): 성공/실패와 실제 에러 메시지를 화면에
+  // 그대로 띄운다 — 폰에서는 콘솔을 볼 수 없어서 이 방식이 가장 빠르다.
+  async function testHaptic() {
+    setHapticResult('...');
+    try {
+      const { isTossWebView } = await import('./toss-env');
+      if (!isTossWebView()) throw new Error('not in toss webview');
+      const { Device } = await import('@apps-in-toss/web-framework');
+      await Device.triggerHaptic({ type: 'basicMedium' });
+      setHapticResult(miniKo.haptic.ok);
+    } catch (e) {
+      const native = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function'
+        ? (() => { try { return navigator.vibrate(200) ? 'vibrate:ok' : 'vibrate:false'; } catch { return 'vibrate:throw'; } })()
+        : 'vibrate:none';
+      setHapticResult(`${miniKo.haptic.fail}: ${e instanceof Error ? e.message : String(e)} / ${native}`);
+    }
+  }
 
   const path = isValidRoomId(code) ? `/r/${normalizeRoomId(code)}` : '';
   const deeplink = `intoss://${APP_NAME}${path}`;
@@ -105,6 +124,22 @@ export function DeepLinkPanel() {
           ) : (
             <p className="text-[13px] text-zinc-500">
               {state.kind === 'loading' ? miniKo.deepLink.loading : miniKo.deepLink.sdkUnavailable}
+            </p>
+          )}
+        </div>
+
+        {/* 햅틱 진단 — 실기기 무진동 원인 추적용 */}
+        <div className="space-y-2 border-t border-white/10 pt-3">
+          <button
+            type="button"
+            onClick={testHaptic}
+            className="w-full rounded-xl bg-zinc-700 py-3 text-sm font-bold text-zinc-100 active:scale-[0.98]"
+          >
+            {miniKo.haptic.button}
+          </button>
+          {hapticResult && (
+            <p className="break-all text-center font-mono text-[12px] text-zinc-400">
+              {hapticResult}
             </p>
           )}
         </div>

@@ -35,9 +35,14 @@ export async function initTossPlatform(): Promise<void> {
 
   const sdk = await import('@apps-in-toss/web-framework');
 
-  // 네이티브 햅틱 백엔드. 브릿지 호출 실패는 haptics 쪽 try/catch가 삼킨다.
-  setHapticsBackend((event) => {
-    void sdk.Device.triggerHaptic({ type: HAPTIC_MAP[event] }).catch(() => {});
+  // 네이티브 햅틱 백엔드. 1차 실기기 테스트에서 무진동이 보고돼 폴백을 얹는다:
+  // triggerHaptic이 거부되면 navigator.vibrate(Android 웹뷰는 지원 가능)로 재시도.
+  setHapticsBackend((event, pattern) => {
+    void sdk.Device.triggerHaptic({ type: HAPTIC_MAP[event] }).catch(() => {
+      try {
+        navigator.vibrate?.(pattern);
+      } catch {}
+    });
   });
 
   // 검수 요건: 게임은 OS 뒤로가기 제스처 사용 불가 — iOS 스와이프 백 차단.

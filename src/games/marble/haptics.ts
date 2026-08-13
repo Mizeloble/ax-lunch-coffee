@@ -11,10 +11,16 @@ const MUTE_KEY = 'marble.haptics.muted';
 
 export type HapticEvent = FeedbackSound;
 
-let backend: ((event: HapticEvent) => void) | null = null;
+let backend: ((event: HapticEvent, pattern: number | number[]) => void) | null = null;
 
-/** 플랫폼 부트에서 네이티브 햅틱 백엔드를 꽂는다 (미니앱: Device.triggerHaptic 매핑). */
-export function setHapticsBackend(fn: ((event: HapticEvent) => void) | null): void {
+/**
+ * 플랫폼 부트에서 네이티브 햅틱 백엔드를 꽂는다 (미니앱: Device.triggerHaptic 매핑).
+ * 진동 패턴도 같이 넘긴다 — 네이티브 호출이 실패하는 기기에서 백엔드가
+ * navigator.vibrate로 폴백할 수 있게.
+ */
+export function setHapticsBackend(
+  fn: ((event: HapticEvent, pattern: number | number[]) => void) | null,
+): void {
   backend = fn;
 }
 
@@ -32,7 +38,7 @@ function fire(event: HapticEvent, pattern: number | number[]): void {
   if (isMuted()) return;
   if (backend) {
     try {
-      backend(event);
+      backend(event, pattern);
     } catch {
       // 네이티브 브릿지 실패는 게임 진행에 영향 없어야 한다.
     }
