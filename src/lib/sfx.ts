@@ -33,6 +33,26 @@ const STORAGE_KEY = 'bbk:sound';
 let platformDefault = false;
 let ctx: AudioContext | null = null;
 let visibilityHooked = false;
+let unlockHooked = false;
+
+// 모바일 웹뷰(WKWebView·Android WebView)는 사용자 제스처 "안에서" AudioContext를
+// 만들거나 resume해야 소리가 난다. 효과음은 대부분 타이머에서 발화하므로(카운트다운
+// 틱 등) 제스처 컨텍스트가 아니다 — 첫 터치에서 미리 깨워두는 언락 훅이 필수.
+// 데스크톱에선 무해한 no-op에 가깝다.
+function installUnlock(): void {
+  if (unlockHooked || typeof document === 'undefined') return;
+  unlockHooked = true;
+  const unlock = () => {
+    const c = getCtx();
+    if (c && c.state === 'suspended') c.resume().catch(() => {});
+    if (c && c.state === 'running') {
+      document.removeEventListener('pointerdown', unlock, true);
+      document.removeEventListener('touchend', unlock, true);
+    }
+  };
+  document.addEventListener('pointerdown', unlock, true);
+  document.addEventListener('touchend', unlock, true);
+}
 
 function readStored(): boolean | null {
   if (typeof window === 'undefined') return null;
@@ -61,6 +81,7 @@ export function setSoundEnabled(on: boolean): void {
 /** 플랫폼 부트에서 한 번 호출 (미니앱: { defaultEnabled: true }). */
 export function configureSfx(opts: { defaultEnabled: boolean }): void {
   platformDefault = opts.defaultEnabled;
+  installUnlock();
 }
 
 function getCtx(): AudioContext | null {
@@ -138,6 +159,7 @@ const PATTERNS: Record<FeedbackSound, (c: AudioContext) => void> = {
 
 export function playFeedbackSound(name: FeedbackSound): void {
   if (!isSoundEnabled()) return;
+  installUnlock();
   const c = getCtx();
   if (!c) return;
   // iOS는 사용자 제스처 전 재생을 막는다 — resume 실패는 조용히 무시하고
