@@ -35,14 +35,20 @@ export async function initTossPlatform(): Promise<void> {
 
   const sdk = await import('@apps-in-toss/web-framework');
 
-  // 네이티브 햅틱 백엔드. 1차 실기기 테스트에서 무진동이 보고돼 폴백을 얹는다:
-  // triggerHaptic이 거부되면 navigator.vibrate(Android 웹뷰는 지원 가능)로 재시도.
-  setHapticsBackend((event, pattern) => {
+  // 네이티브 햅틱 백엔드. triggerHaptic 거부 시 navigator.vibrate로 폴백
+  // (실기기에서 이 조합으로 진동 확인됨). 토스 햅틱 타입은 UI용이라 약하게
+  // 설계돼 있어, 큰 순간만 짧은 간격 2연타로 체감을 키운다.
+  const strong = new Set<HapticEvent>(['countdownGo', 'myFinish', 'loserConfirmed', 'reactionGo']);
+  const trigger = (event: HapticEvent, pattern: number | number[]) => {
     void sdk.Device.triggerHaptic({ type: HAPTIC_MAP[event] }).catch(() => {
       try {
         navigator.vibrate?.(pattern);
       } catch {}
     });
+  };
+  setHapticsBackend((event, pattern) => {
+    trigger(event, pattern);
+    if (strong.has(event)) setTimeout(() => trigger(event, 0), 130);
   });
 
   // 검수 요건: 게임은 OS 뒤로가기 제스처 사용 불가 — iOS 스와이프 백 차단.
