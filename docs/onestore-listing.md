@@ -5,6 +5,9 @@
 
 ## 업로드 파일
 
+> 실기기 검증 완료 (2026-08-15): 설치 후 실행 시 **주소창 없이 전체화면**으로 열림 —
+> assetlinks 서명 검증 통과. TWA로 정상 동작한다.
+
 | 항목 | 파일 |
 |---|---|
 | APK | `android-wrapper/app-release-signed.apk` (v1.0.0, 1.4MB) |
