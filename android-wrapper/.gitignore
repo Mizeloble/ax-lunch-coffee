@@ -9,3 +9,8 @@ store_icon.png
 manifest-checksum.txt
 # 서명 키 — 절대 커밋 금지 (유출 시 앱 위조 가능). 백업은 별도 보관.
 signing/
+# 빌드 산출물
+*.apk
+*.aab
+*.idsig
+gradle.properties
