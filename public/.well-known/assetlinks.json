@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mizeloble.bokbulbok",
+      "sha256_cert_fingerprints": [
+        "E8:81:F7:3E:67:36:8D:08:09:69:7D:4A:66:75:8A:F0:2E:08:D8:77:FA:DC:81:3D:6B:6E:20:68:8E:51:D6:39"
+      ]
+    }
+  }
+]

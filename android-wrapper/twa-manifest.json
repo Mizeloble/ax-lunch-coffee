@@ -1,0 +1,41 @@
+{
+  "packageId": "com.mizeloble.bokbulbok",
+  "host": "bokbulbok-party.fly.dev",
+  "name": "복불복파티",
+  "launcherName": "복불복",
+  "display": "standalone",
+  "themeColor": "#0B0B10",
+  "themeColorDark": "#0B0B10",
+  "navigationColor": "#0B0B10",
+  "navigationColorDark": "#0B0B10",
+  "navigationDividerColor": "#0B0B10",
+  "navigationDividerColorDark": "#0B0B10",
+  "backgroundColor": "#0B0B10",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://bokbulbok-party.fly.dev/icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./signing/release.keystore",
+    "alias": "bokbulbok"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://bokbulbok-party.fly.dev/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": false,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://bokbulbok-party.fly.dev/",
+  "minSdkVersion": 21,
+  "orientation": "portrait",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": []
+}

@@ -1,0 +1,11 @@
+# 생성물 — twa-manifest.json에서 `bubblewrap update`로 재생성 가능
+app/
+gradle/
+build/
+.gradle/
+*.gradle
+gradlew*
+store_icon.png
+manifest-checksum.txt
+# 서명 키 — 절대 커밋 금지 (유출 시 앱 위조 가능). 백업은 별도 보관.
+signing/

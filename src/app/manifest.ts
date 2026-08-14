@@ -17,6 +17,10 @@ export default function manifest(): MetadataRoute.Manifest {
     icons: [
       { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
       { src: '/apple-icon', sizes: '180x180', type: 'image/png' },
+      // 192/512 PNG: TWA 래핑(원스토어 등급분류용 스토어 앱)과 안드로이드 홈 화면
+      // 설치가 요구하는 래스터 아이콘. 로고와 같은 과녁 마크(store-assets 유래).
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
     ],
   };
 }
