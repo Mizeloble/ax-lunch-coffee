@@ -14,3 +14,6 @@ tsconfig.tsbuildinfo
 
 # 서버 번들 산출물 (npm run build:server)
 dist/
+
+# 로컬 APK 전달용 (커밋 금지)
+/public/dl/
