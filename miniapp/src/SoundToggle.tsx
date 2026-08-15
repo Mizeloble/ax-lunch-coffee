@@ -4,7 +4,12 @@ import { haptics } from '@/games/marble/haptics';
 import { miniKo } from './i18n';
 
 // 검수 요건: 사운드 On/Off 사용자 설정 — 어느 화면에서든 접근 가능한 플로팅 토글.
-// 게임 캔버스와 겹칠 수 있어 우상단 안전영역 아래 작은 아이콘으로만.
+//
+// 위치가 좌하단인 이유(다른 세 모서리가 전부 예약돼 있다):
+//  · 우상단 = 토스가 게임 풀스크린에 얹는 닫기 버튼 — 가리면 검수 반려 사유
+//  · 좌상단 = 마블 렌더러의 '내 시점' 배지
+//  · 하단 중앙 = '결과 보기' CTA
+// 좌하단은 홈 인디케이터만 피하면 되므로 safe-area-inset-bottom을 깐다.
 export function SoundToggle() {
   const [on, setOn] = useState(isSoundEnabled);
 
@@ -24,7 +29,7 @@ export function SoundToggle() {
           haptics.countdownGo();
         }
       }}
-      className="fixed right-3 top-[max(env(safe-area-inset-top),12px)] z-[70] flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-base backdrop-blur-sm active:scale-95"
+      className="fixed left-3 bottom-[max(env(safe-area-inset-bottom),12px)] z-[70] flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-base backdrop-blur-sm active:scale-95"
     >
       <span aria-hidden>{on ? '🔊' : '🔇'}</span>
     </button>
