@@ -17,11 +17,17 @@ export const ROOM = {
    * NOTE: this does NOT bound hosting cost. Fly bills machine *started-seconds*,
    * not room count — cost ≈ how long the VM stays awake (sporadic all-day
    * traffic + auto-stop cooldown can keep it up most of the workday). Cost
-   * levers are VM size / uptime, not this number. Kept small (10) on purpose
-   * for the current single small VM; raise only together with VM size + Fly
-   * `http_service` connection limits as public traffic grows.
+   * levers are VM size / uptime, not this number.
+   *
+   * 25 is sized off measured cost, not guesswork (see docs/launch-checklist.md
+   * §G): a held room costs ~0.7MB on top of a ~109MB runtime floor, so 25 rooms
+   * land near 126MB — memory is nowhere near binding on the 512MB VM. The real
+   * ceiling is the Fly `http_service` connection limit (soft 150 / hard 200):
+   * at ~6 players per room, 25 rooms ≈ 150 sockets. **Raise those limits before
+   * raising this**, or new players start getting refused at the proxy instead of
+   * the graceful CAPACITY path here.
    */
-  MAX_ROOMS: 10,
+  MAX_ROOMS: 25,
   /**
    * Grace window for a freshly-created room to be claimed by a live socket
    * (host page connecting + `join`). A room with no connected player after this

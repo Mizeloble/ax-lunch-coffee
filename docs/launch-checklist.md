@@ -70,8 +70,8 @@
 ---
 
 ## Phase 2 잔여 (트래픽 붙은 뒤, 호스팅)
-- [ ] **수직 확장 먼저**: `fly.toml` VM(`shared-cpu-1x`/512MB → `2x`/1GB+). scale-to-zero라 유휴 비용은 그대로 0.
-- [ ] `ROOM.MAX_ROOMS`(현 10) 상향 — **반드시** VM 크기 + `http_service` 동시연결 한도(soft 150/hard 200)와 함께(`src/lib/constants.ts` 주석 참고).
+- [ ] ~~**수직 확장 먼저**~~ — §G 실측으로 **불필요 판정**. 메모리·CPU 모두 여유가 크고 병목은 커넥션이다. 50방+가 필요해지는 시점에 재검토.
+- [x] `ROOM.MAX_ROOMS` 10 → 25 (v2.33.0, §G). 다음 상향은 `http_service` 동시연결 한도(soft 150/hard 200)를 먼저 올려야 한다.
 - [ ] 방 생성 레이트리밋 수치(`RATE_LIMIT`) 트래픽 보고 조정.
 - [ ] 캡차 도입 여부 재검토.
 - 수평 확장이 필요해지면 그건 호스팅이 아니라 **앱 구조** 문제(인메모리 상태 → Socket.IO Redis 어댑터 + 스티키 세션). 어느 클라우드든 동일하게 재설계 필요.
@@ -102,7 +102,7 @@ CPU도 라이브 시뮬 기준 여유가 크다.
 
 ### 권고 (출시 직전 적용)
 
-1. `ROOM.MAX_ROOMS` 10 → **25** (메모리 ~126MB, 커넥션 최대 150 = soft_limit 이내)
+1. [x] `ROOM.MAX_ROOMS` 10 → **25** 적용 완료 (v2.33.0). 메모리 ~126MB, 커넥션 최대 150 = soft_limit 이내
 2. VM 스펙 **유지** (`shared-cpu-1x` / 512MB) — 상향 근거 없음
 3. 검수 통과 후 노출 시작 시 `min_machines_running` 0 → **1** 검토:
    콜드스타트(suspend 재개 ~1s) 제거 vs 비용. scale-to-zero는 사실상 무료지만
