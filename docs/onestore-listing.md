@@ -157,6 +157,7 @@ GRAC [자체등급분류 게임물 조회](https://www.grac.or.kr/Statistics/Sel
 
 | 항목 | 값 |
 |---|---|
+| **스토어 링크** | `https://m.onestore.co.kr/v2/ko-kr/app/0001008273` |
 | **등급분류번호** | `ONIA-SG-260816-0001` |
 | **등급분류일자** | `2026-08-16` |
 | **이용등급** | **전체이용가** (등급 이미지 `rating_all.gif`) |
