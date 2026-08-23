@@ -213,7 +213,7 @@ Vite CSR + `@apps-in-toss/web-framework` 3.0.2. **포팅 리스크가 예상보�
 
 | 검수 항목 | 구현 |
 |---|---|
-| 사운드 적용 + On/Off 설정 | ✅ `src/lib/sfx.ts` WebAudio 신디사이저(에셋 없음) — haptics를 피드백 버스로 확장해 이벤트 하나가 진동+효과음으로. 미니앱 기본 켬 + 플로팅 토글, **웹은 기본 꺼짐(동작 불변)**. 백그라운드 전환 시 AudioContext suspend |
+| 사운드 적용 + On/Off 설정 | ✅ `src/lib/sfx.ts` WebAudio 신디사이저(에셋 없음) — haptics를 피드백 버스로 확장해 이벤트 하나가 진동+효과음으로. 미니앱 기본 켬 + **홈 화면 설정 행**(v2.34.0, 플로팅은 자리 충돌로 폐기), **웹은 기본 꺼짐(동작 불변)**. 백그라운드 전환 시 AudioContext suspend |
 | 종료 확인 모달 | ✅ `ExitGuard` — `graniteEvent.backEvent`(Android 뒤로가기) → 확인 모달 → `closeView()` |
 | OS 뒤로가기 제스처 불가 | ✅ iOS `Screen.setIosSwipeBack({isEnabled:false})` + Android은 ExitGuard가 흡수 |
 | 게임 중 화면 유지 | ✅ `useWakeLock` shim → `setScreenAwakeMode` (웹뷰엔 navigator.wakeLock 없음) |
