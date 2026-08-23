@@ -2,7 +2,6 @@ import RoomClient from '@/app/r/[roomId]/RoomClient';
 import { useNavStore } from './router';
 import { Home } from './Home';
 import { ExitGuard } from './ExitGuard';
-import { SoundToggle } from './SoundToggle';
 
 export function App() {
   const path = useNavStore((s) => s.path);
@@ -21,7 +20,6 @@ export function App() {
       ) : (
         <Home />
       )}
-      <SoundToggle />
       <ExitGuard />
     </>
   );

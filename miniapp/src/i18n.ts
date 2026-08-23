@@ -8,8 +8,11 @@ export const miniKo = {
     leave: '닫기',
   },
   sound: {
-    turnOn: '소리 켜기',
-    turnOff: '소리 끄기',
+    label: '효과음',
+    on: '켜짐',
+    off: '꺼짐',
+    turnOn: '효과음 켜기',
+    turnOff: '효과음 끄기',
   },
   haptic: {
     button: '햅틱 테스트 (진동이 와야 정상)',

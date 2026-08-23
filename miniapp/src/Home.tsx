@@ -8,6 +8,7 @@ import type { RoomCreateAck } from '@/lib/protocol';
 import { navigate } from './router';
 import { getSocket } from './shims/socket-client';
 import { DeepLinkPanel } from './DeepLinkPanel';
+import { SoundToggle } from './SoundToggle';
 import { miniKo } from './i18n';
 
 // PoC 홈: 방 만들기 + 코드 입장 + 입장 경로 실측 패널만.
@@ -114,6 +115,8 @@ export function Home() {
             </p>
           )}
         </div>
+
+        <SoundToggle />
 
         <DeepLinkPanel />
       </div>
