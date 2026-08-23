@@ -6,10 +6,11 @@ import { miniKo } from './i18n';
 // 검수 요건: 사운드 On/Off 사용자 설정 — 어느 화면에서든 접근 가능한 플로팅 토글.
 //
 // 위치가 좌하단인 이유(다른 세 모서리가 전부 예약돼 있다):
-//  · 우상단 = 토스가 게임 풀스크린에 얹는 닫기 버튼 — 가리면 검수 반려 사유
+//  · 우상단 = 로비의 '초대' 버튼(top 16~54) + 게임 풀스크린 시 토스 닫기 버튼
 //  · 좌상단 = 마블 렌더러의 '내 시점' 배지
-//  · 하단 중앙 = '결과 보기' CTA
-// 좌하단은 홈 인디케이터만 피하면 되므로 safe-area-inset-bottom을 깐다.
+//  · 하단 = 로비의 sticky CTA 바(실측 114px) + 게임의 '결과 보기' 버튼
+// 그래서 좌하단이되 **CTA 위로 120px 띄운다**(실측 clearance ~55px). 겹치는 건
+// 스크롤 콘텐츠뿐이고 다른 버튼과는 부딪히지 않는다.
 export function SoundToggle() {
   const [on, setOn] = useState(isSoundEnabled);
 
@@ -29,7 +30,7 @@ export function SoundToggle() {
           haptics.countdownGo();
         }
       }}
-      className="fixed left-3 bottom-[max(env(safe-area-inset-bottom),12px)] z-[70] flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-base backdrop-blur-sm active:scale-95"
+      className="fixed left-3 bottom-[calc(max(env(safe-area-inset-bottom),12px)+120px)] z-[70] flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800/80 text-base backdrop-blur-sm active:scale-95"
     >
       <span aria-hidden>{on ? '🔊' : '🔇'}</span>
     </button>
