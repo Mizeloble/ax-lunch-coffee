@@ -11,7 +11,11 @@ import { DeepLinkPanel } from './DeepLinkPanel';
 import { SoundToggle } from './SoundToggle';
 import { miniKo } from './i18n';
 
-// PoC 홈: 방 만들기 + 코드 입장 + 입장 경로 실측 패널만.
+// 입장 경로 실측 패널은 개발자 진단용 — 출시 빌드에는 넣지 않는다.
+// 필요할 때만 `VITE_DEBUG_PANEL=1 npm run build:ait`로 켠다.
+const SHOW_DEBUG_PANEL = import.meta.env.VITE_DEBUG_PANEL === '1';
+
+// 미니앱 홈: 방 만들기 + 코드 입장 + 효과음 설정.
 // 랜딩의 SEO·FAQ·광고·데모 영상은 미니앱에 불필요해서 싣지 않는다.
 export function Home() {
   const [busy, setBusy] = useState(false);
@@ -118,7 +122,7 @@ export function Home() {
 
         <SoundToggle />
 
-        <DeepLinkPanel />
+        {SHOW_DEBUG_PANEL && <DeepLinkPanel />}
       </div>
     </main>
   );
