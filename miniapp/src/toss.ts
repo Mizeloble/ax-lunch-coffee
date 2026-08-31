@@ -3,7 +3,6 @@
 // 각 단계가 조용히 실패하고 앱은 웹처럼 동작한다.
 
 import { setHapticsBackend, type HapticEvent } from '@/games/marble/haptics';
-import { configureSfx } from '@/lib/sfx';
 import { navigate } from './router';
 
 const ROOM_PATH_RE = /\/r\/([A-Z0-9]{4,8})/i;
@@ -25,9 +24,6 @@ const HAPTIC_MAP: Record<HapticEvent, 'tickWeak' | 'tap' | 'tickMedium' | 'softM
 };
 
 export async function initTossPlatform(): Promise<void> {
-  // 검수 요건: 미니앱은 효과음 기본 켬 + On/Off 설정 제공(SoundToggle).
-  configureSfx({ defaultEnabled: true });
-
   // 웹뷰 밖(로컬 브라우저) — 브릿지 호출은 동기 throw·내부 unhandled rejection을
   // 일으키므로 아예 진입하지 않는다.
   const { isTossWebView } = await import('./toss-env');

@@ -33,7 +33,7 @@ export async function hydrateHostTokens(): Promise<void> {
     read.catch(() => {});
     const raw = await Promise.race([
       read,
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 800)),
     ]);
     if (!raw) return;
     const obj = JSON.parse(raw) as Record<string, string>;
